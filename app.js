@@ -258,6 +258,35 @@ async function doAutosave() {
 }
 
 function wire() {
+
+	  // --- Portal auth (Supabase Edge Function) ---
+  const btnLogin = document.getElementById("btnLogin");
+  const btnLogout = document.getElementById("btnLogout");
+  const authUser = document.getElementById("authUser");
+  const authPass = document.getElementById("authPass");
+
+  if (btnLogin) {
+    btnLogin.addEventListener("click", async () => {
+      const u = (authUser?.value || "").trim();
+      const p = (authPass?.value || "").trim();
+      if (!u || !p) return alert("Inserisci username e password");
+      await portalLogin(u, p);
+    });
+  }
+
+  if (btnLogout) {
+    btnLogout.addEventListener("click", () => clearPortalSession());
+  }
+
+  // Enter sulla password => login
+  if (authPass) {
+    authPass.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        btnLogin?.click();
+      }
+    });
+  }
   // Portal auth (online mode)
   const btnLogin = document.getElementById("btnLogin");
   const btnLogout = document.getElementById("btnLogout");
