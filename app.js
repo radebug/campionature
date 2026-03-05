@@ -258,25 +258,7 @@ async function doAutosave() {
 }
 
 function wire() {
-  // Portal auth (online mode)
-  const btnLogin = document.getElementById("btnLogin");
-  const btnLogout = document.getElementById("btnLogout");
-  const authUser = document.getElementById("authUser");
-  const authPass = document.getElementById("authPass");
-
-  if (btnLogin) btnLogin.addEventListener("click", async () => {
-    const u = (authUser?.value || "").trim();
-    const p = (authPass?.value || "").trim();
-    if (!u || !p) { alert("Insert username and password."); return; }
-    await portalLogin(u, p);
-  });
-
-  if (btnLogout) btnLogout.addEventListener("click", () => {
-    clearPortalSession();
-  });
-
   // Folder mode
-
   if (els.btnOpenFolder) {
     els.btnOpenFolder.addEventListener("click", openCatalogueFolder);
   }
@@ -451,6 +433,34 @@ els.stockUnknownExpiry.addEventListener("change", () => {
       ? "Folder mode: OFF"
       : "Folder mode: Not supported (use Chrome/Edge)";
   }
+
+// --- Portal auth (admin login) ---
+const btnLogin = document.getElementById("btnLogin");
+const btnLogout = document.getElementById("btnLogout");
+const authUser = document.getElementById("authUser");
+const authPass = document.getElementById("authPass");
+
+if (btnLogin) {
+  btnLogin.addEventListener("click", async () => {
+    const username = (authUser?.value || "").trim();
+    const password = (authPass?.value || "").trim();
+    if (!username || !password) return alert("Inserisci username e password");
+    await portalLogin(username, password);
+  });
+}
+
+if (btnLogout) {
+  btnLogout.addEventListener("click", () => clearPortalSession());
+}
+
+if (authPass && btnLogin) {
+  authPass.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      btnLogin.click();
+    }
+  });
+}
 }
 
 /* Folder mode (Chrome/Edge) */
@@ -666,7 +676,7 @@ function catRow(cat, pseudo) {
   const btns = document.createElement("div");
   btns.className = "catBtns";
 
-  if (!pseudo && isAdmin()) {
+  if (!pseudo) {
     const edit = document.createElement("button");
     edit.className = "btn small ghost";
     edit.textContent = "Edit";
@@ -948,14 +958,6 @@ if (showOrderedDot) {
   d.title = "Ordered stock pending";
   dotsContainer.appendChild(d);
 }
-
-  // Hide editing controls for non-admin viewers
-  if (!isAdmin()) {
-    const be = node.querySelector('[data-act="edit"]');
-    const bd = node.querySelector('[data-act="del"]');
-    if (be) be.style.display = "none";
-    if (bd) bd.style.display = "none";
-  }
 
   node.querySelector('[data-act="info"]').addEventListener("click", () => openInfoDlg(p.id));
   node.querySelector('[data-act="stock"]').addEventListener("click", () => openStockDlg(p.id));
@@ -1915,34 +1917,37 @@ function createCtPill(count, type) {
   return span;
 }
 
+(async function bootstrap() {
+  wire();
 
-async function boot() {
+  // Init Supabase client (online mode)
+  await initSupabase();
+
+  // Expose for debugging (optional)
+  window.sb = supabaseClient;
+
+  // Restore session (if any) + update UI
   portalSession = loadPortalSession();
   refreshAuthUI();
 
-  await initSupabase();
-
-  // Try online first (Supabase)
-  if (supabaseClient) {
-    const ok = await loadCatalogueOnline();
-    if (ok) return;
+  // Load catalogue from Supabase; if unavailable, fallback to local catalogue.json fetch
+  const ok = await loadCatalogueOnline();
+  if (!ok) {
+    try {
+      const res = await fetch("catalogue.json", { cache: "no-store" });
+      if (res.ok) {
+        const obj = await res.json();
+        validateAndNormalize(obj);
+        state = obj;
+        loadedFileName = "catalogue.json (fallback)";
+        setEnabled(true);
+        setDirty(false);
+        render();
+      } else {
+        console.warn("Fallback catalogue.json not found:", res.status);
+      }
+    } catch (e) {
+      console.warn("Fallback catalogue.json failed:", e);
+    }
   }
-
-  // Fallback: load local catalogue.json
-  try {
-    const res = await fetch("catalogue.json", { cache: "no-store" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const obj = await res.json();
-    validateAndNormalize(obj);
-    state = obj;
-    loadedFileName = "catalogue.json (local)";
-    setEnabled(true);
-    setDirty(false);
-    render();
-  } catch (e) {
-    console.warn("Local catalogue load failed:", e);
-    // leave UI locked, user can still use manual load in dev
-  }
-}
-
-boot();
+})();
