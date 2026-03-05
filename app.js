@@ -1975,3 +1975,19 @@ async function boot() {
 }
 
 boot();
+(async function bootstrap() {
+  wire();
+
+  // Supabase init
+  await initSupabase();
+
+  // restore session (if any)
+  portalSession = loadPortalSession();
+  refreshAuthUI();
+
+  // load catalogue from Supabase
+  const ok = await loadCatalogueOnline();
+  if (!ok) {
+    alert("Non riesco a caricare il catalogo da Supabase. Controlla tabella/catalogue row 'main' e le keys in index.html.");
+  }
+})();
