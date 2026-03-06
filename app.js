@@ -2128,7 +2128,10 @@ function createCtPill(count, type) {
 }
 
 (async function bootstrap(){
+  document.addEventListener("DOMContentLoaded", () => {
+  initSupabase();
   wire();
+});
   await initSupabase();
   portalSession = loadPortalSession();
   refreshAuthUI();
