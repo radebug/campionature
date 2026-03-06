@@ -19,11 +19,11 @@
     <div class="title">Product Catalogue</div>
 
     <div class="toolbar">
-      <button class="btn" id="btnOpenFolder">Use catalogue folder (autosave)…</button>
+      <button class="btn" id="btnOpenFolder">Use catalogue folder…</button>
       <span class="note" id="folderStatus">Folder mode: OFF</span>
 
       <button class="btn" id="btnLoad">Load JSON</button>
-      <button class="btn" id="btnSave" disabled>Save JSON now</button>
+      <button class="btn" id="btnSave" disabled>Save JSON</button>
 
       <span class="note" id="fileNote">No file loaded.</span>
       <div class="spacer"></div>
@@ -42,7 +42,6 @@
       <button class="btn" id="btnAddProduct" disabled>Add product</button>
       <button class="btn" id="btnAddCategory" disabled>Add category</button>
       <button class="btn" id="btnShipments" disabled>Shipping history</button>
-      <button class="btn" id="btnSamplesHistory" disabled>Samples history</button>
       <button class="btn" id="btnExportExcel" disabled>Download Excel</button>
     </div>
 
@@ -61,68 +60,9 @@
     </aside>
 
     <section class="content">
-      <div class="contentTop">
-        <div class="contentMain">
-          <div id="filterLine" class="filterLine"></div>
-          <div id="productGrid" class="productGrid"></div>
-          <div id="empty" class="empty" hidden>No products found.</div>
-        </div>
-
-        <aside class="samplePanel" id="samplePanel">
-          <div class="samplePanelHeader">
-            <div>
-              <div class="samplePanelTitle">Sample cart</div>
-              <div class="smallNote" id="sampleCartInfo">No products selected.</div>
-            </div>
-            <button class="btn small ghost" type="button" id="btnClearSample">Clear</button>
-          </div>
-
-          <div class="sampleCartList" id="sampleCartList"></div>
-
-          <form class="sampleForm" id="sampleForm">
-            <label class="row">
-              <span>Date</span>
-              <input id="sampleDate" type="text" placeholder="DD/MM/YYYY" inputmode="numeric" />
-            </label>
-
-            <label class="row">
-              <span>Destination</span>
-              <input id="sampleDestination" type="text" placeholder="Customer / city / office" />
-            </label>
-
-            <label class="row">
-              <span>Recipient</span>
-              <input id="sampleRecipient" type="text" placeholder="Name / department" />
-            </label>
-
-            <label class="row">
-              <span>Reference</span>
-              <input id="sampleReference" type="text" placeholder="Courier / tracking / internal ref" />
-            </label>
-
-            <label class="row">
-              <span>Notes</span>
-              <textarea id="sampleNotes" rows="3" placeholder="Optional notes"></textarea>
-            </label>
-
-            <div class="sampleTotals">
-              <div><strong id="sampleTotalProducts">0</strong> products</div>
-              <div><strong id="sampleTotalUnits">0</strong> units</div>
-            </div>
-
-            <label class="sampleCheckRow" title="Generate DHL/customs list together with the sample order">
-              <input id="sampleExtraUE" type="checkbox" />
-              <span>Extra UE / DHL List</span>
-            </label>
-
-            <div class="sampleActions">
-              <button class="btn" type="button" id="btnSamplePdf">PDF</button>
-              <button class="btn" type="button" id="btnSampleExcel">Excel</button>
-              <button class="btn" type="submit" id="btnCreateSample">Create sample</button>
-            </div>
-          </form>
-        </aside>
-      </div>
+      <div id="filterLine" class="filterLine"></div>
+      <div id="productGrid" class="productGrid"></div>
+      <div id="empty" class="empty" hidden>No products found.</div>
     </section>
   </main>
 
@@ -194,16 +134,6 @@
           <label class="row">
             <span>CT Size (Packs per Carton)</span>
             <input id="prodCtSize" type="number" min="1" step="1" placeholder="e.g. 12" />
-          </label>
-
-          <label class="row">
-            <span>Customs code</span>
-            <input id="prodCustomsCode" type="text" placeholder="e.g. 1905.31" />
-          </label>
-
-          <label class="row">
-            <span>Unit weight (kg)</span>
-            <input id="prodUnitWeightKg" type="number" min="0" step="0.001" placeholder="e.g. 0.250" />
           </label>
 
           <input id="imgFilePicker" type="file" accept="image/*" hidden />
@@ -375,50 +305,6 @@
     </form>
   </dialog>
 
-  <!-- Samples history dialog -->
-  <dialog class="dlg" id="samplesHistDlg">
-    <form method="dialog" class="dlgBody wide shipHistBody" id="samplesHistForm">
-      <div class="dlgTitle">Samples history</div>
-      <div class="shipHistTools">
-        <input class="search" id="samplesHistSearch" type="search" placeholder="Search sample / destination / recipient…" />
-        <button class="btn" type="button" id="btnSamplesExport">Export Excel</button>
-      </div>
-      <div class="shipTableWrap">
-        <table class="shipTable">
-          <thead>
-            <tr>
-              <th>Date</th><th>Sample</th><th>Total Qty</th><th>Destination</th><th>Recipient</th><th>Reference</th><th>Notes</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="samplesHistBody"></tbody>
-        </table>
-      </div>
-      <div class="smallNote" id="samplesHistCount"></div>
-      <div class="dlgBtns">
-        <button class="btn ghost" type="button" id="btnSamplesHistClose">Close</button>
-      </div>
-    </form>
-  </dialog>
-
-  <template id="sampleRowTpl">
-    <div class="sampleItem">
-      <div class="sampleItemMain">
-        <div class="sampleItemName"></div>
-        <div class="sampleItemMeta"></div>
-      </div>
-      <div class="sampleQtyBox">
-        <button class="btn small ghost" type="button" data-act="minus">−</button>
-        <input class="sampleQtyInput" type="number" min="1" step="1" />
-        <button class="btn small ghost" type="button" data-act="plus">+</button>
-        <button class="btn small ghost danger" type="button" data-act="remove">Remove</button>
-      </div>
-    </div>
-  </template>
-
-  <template id="samplePdfHostTpl">
-    <div></div>
-  </template>
-
   <template id="cardTpl">
     <div class="card">
       <div class="thumb">
@@ -441,7 +327,6 @@
           <button class="btn small ghost" data-act="info">More info…</button>
           <button class="btn small" data-act="stock">Stock…</button>
           <button class="btn small ghost" data-act="edit">Edit</button>
-          <button class="btn small ghost" data-act="sample">Add to sample</button>
           <button class="btn small ghost" data-act="ship">Ship…</button>
           <button class="btn small ghost danger" data-act="del">Delete</button>
         </div>
@@ -458,7 +343,6 @@
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="app.js" defer></script>
 </body>
 </html>

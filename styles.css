@@ -475,30 +475,3 @@ textarea{resize:vertical}
   .dlgBody,.dlgBody.wide,.shipHistBody{width:calc(100vw - 16px);padding:10px}
   .shipHistTools .btn,.shipHistTools .search{width:100%}
 }
-
-
-.contentTop{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;align-items:start}
-.contentMain{min-width:0}
-.samplePanel{position:sticky;top:84px;border:1px solid var(--line);border-radius:var(--r);background:#fbfcff;padding:12px;box-shadow:var(--shadow)}
-.samplePanelHeader{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}
-.samplePanelTitle{font-weight:800}
-.sampleCartList{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto;margin-bottom:12px}
-.sampleItem{border:1px solid var(--line);border-radius:var(--r);background:#fff;padding:8px;display:flex;flex-direction:column;gap:8px}
-.sampleItemMain{display:flex;flex-direction:column;gap:3px}
-.sampleItemName{font-weight:700}
-.sampleItemMeta{font-size:12px;color:var(--muted)}
-.sampleQtyBox{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.sampleQtyInput{width:74px;text-align:center;padding:7px 8px}
-.sampleForm{display:flex;flex-direction:column;gap:0}
-.sampleTotals{display:flex;justify-content:space-between;gap:10px;padding:10px;border:1px solid var(--line);border-radius:var(--r);background:#fff;margin:8px 0 12px}
-.sampleActions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.sampleEmpty{padding:14px;border:1px dashed var(--line);border-radius:var(--r);text-align:center;color:var(--muted);background:#fff}
-.sampleCardBtn{border-color:rgba(42,103,209,.25)}
-.samplePanel .row{margin-bottom:10px}
-.samplePanel .row textarea{min-height:82px}
-@media (max-width: 1180px){.contentTop{grid-template-columns:1fr}.samplePanel{position:static}}
-@media (max-width: 640px){.sampleActions{grid-template-columns:1fr}.sampleQtyBox{justify-content:flex-start}}
-
-
-.sampleCheckRow{display:flex;align-items:center;gap:8px;margin:8px 0 4px;font-size:12px;color:var(--muted);font-weight:700}
-.sampleCheckRow input{margin:0}
