@@ -13,6 +13,7 @@ const els = {
   btnAddProduct: $("#btnAddProduct"),
   btnAddCategory: $("#btnAddCategory"),
   btnShipments: $("#btnShipments"),
+  btnSamplesHistory: $("#btnSamplesHistory"),
   btnExportExcel: $("#btnExportExcel"),
 
   catSearch: $("#catSearch"),
@@ -31,6 +32,8 @@ const els = {
   prodTitle: $("#prodTitle"),
   prodName: $("#prodName"),
   prodCtSize: $("#prodCtSize"),
+  prodCustomsCode: $("#prodCustomsCode"),
+  prodUnitWeightKg: $("#prodUnitWeightKg"),
   prodCategory: $("#prodCategory"),
   prodCategoriesBox: $("#prodCategoriesBox"),
   prodWordings: $("#prodWordings"),
@@ -84,7 +87,32 @@ stockUnknownExpiry: $("#stockUnknownExpiry"),
   btnShipHistClose: $("#btnShipHistClose"),
   btnShipExport: $("#btnShipExport"),
 
+  samplePanel: $("#samplePanel"),
+  sampleCartInfo: $("#sampleCartInfo"),
+  sampleCartList: $("#sampleCartList"),
+  sampleForm: $("#sampleForm"),
+  sampleDate: $("#sampleDate"),
+  sampleDestination: $("#sampleDestination"),
+  sampleRecipient: $("#sampleRecipient"),
+  sampleReference: $("#sampleReference"),
+  sampleNotes: $("#sampleNotes"),
+  sampleTotalProducts: $("#sampleTotalProducts"),
+  sampleTotalUnits: $("#sampleTotalUnits"),
+  sampleExtraUE: $("#sampleExtraUE"),
+  btnClearSample: $("#btnClearSample"),
+  btnCreateSample: $("#btnCreateSample"),
+  btnSamplePdf: $("#btnSamplePdf"),
+  btnSampleExcel: $("#btnSampleExcel"),
+
+  samplesHistDlg: $("#samplesHistDlg"),
+  samplesHistBody: $("#samplesHistBody"),
+  samplesHistSearch: $("#samplesHistSearch"),
+  samplesHistCount: $("#samplesHistCount"),
+  btnSamplesHistClose: $("#btnSamplesHistClose"),
+  btnSamplesExport: $("#btnSamplesExport"),
+
   cardTpl: $("#cardTpl"),
+  sampleRowTpl: $("#sampleRowTpl"),
 };
 
 
@@ -162,6 +190,7 @@ function refreshAuthUI() {
   if (els?.btnAddProduct) els.btnAddProduct.style.display = editable ? "" : "none";
   if (els?.btnAddCategory) els.btnAddCategory.style.display = editable ? "" : "none";
   if (els?.btnShipments) els.btnShipments.disabled = !state;
+  if (els?.btnSamplesHistory) els.btnSamplesHistory.disabled = !state;
   if (els?.btnExportExcel) els.btnExportExcel.disabled = !state;
 }
 
@@ -231,6 +260,7 @@ async function portalSaveCatalogue() {
 
 let state = null;
 let loadedFileName = "";
+let sampleCart = [];
 
 let ui = {
   selectedCategoryId: "__all__",
@@ -246,10 +276,131 @@ const fs = {
   jsonFileName: "catalogue.json",
 };
 
+const FOLDER_DB_NAME = "catalogue-local-db";
+const FOLDER_STORE_NAME = "kv";
+const FOLDER_HANDLE_KEY = "catalogue-folder-handle";
+
 // Autosave debounce (folder mode only)
 let autosaveTimer = null;
 let autosaveInFlight = false;
 let autosaveQueued = false;
+
+function openFolderDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(FOLDER_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(FOLDER_STORE_NAME);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("IndexedDB unavailable"));
+  });
+}
+
+async function saveRememberedFolderHandle(handle) {
+  if (!("indexedDB" in window) || !handle) return;
+  try {
+    const db = await openFolderDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(FOLDER_STORE_NAME, "readwrite");
+      tx.objectStore(FOLDER_STORE_NAME).put(handle, FOLDER_HANDLE_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error("Could not save folder handle"));
+    });
+    db.close();
+  } catch (e) {
+    console.warn("Could not remember folder handle", e);
+  }
+}
+
+async function loadRememberedFolderHandle() {
+  if (!("indexedDB" in window)) return null;
+  try {
+    const db = await openFolderDb();
+    const handle = await new Promise((resolve, reject) => {
+      const tx = db.transaction(FOLDER_STORE_NAME, "readonly");
+      const req = tx.objectStore(FOLDER_STORE_NAME).get(FOLDER_HANDLE_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error || new Error("Could not read folder handle"));
+    });
+    db.close();
+    return handle;
+  } catch (e) {
+    console.warn("Could not restore folder handle", e);
+    return null;
+  }
+}
+
+async function ensureFolderPermission(handle, write = false) {
+  if (!handle?.queryPermission) return false;
+  const opts = write ? { mode: "readwrite" } : {};
+  try {
+    if ((await handle.queryPermission(opts)) === "granted") return true;
+    if ((await handle.requestPermission(opts)) === "granted") return true;
+  } catch (e) {
+    console.warn("Folder permission denied", e);
+  }
+  return false;
+}
+
+async function restoreRememberedFolderMode() {
+  if (!window.showDirectoryPicker) return false;
+  const handle = await loadRememberedFolderHandle();
+  if (!handle) return false;
+  const allowed = await ensureFolderPermission(handle, true);
+  if (!allowed) return false;
+
+  fs.folderHandle = handle;
+  if (els.folderStatus) els.folderStatus.textContent = "Folder mode: ON (restored)";
+  try {
+    await loadJsonFromFolder();
+    if (els.folderStatus) els.folderStatus.textContent = "Folder mode: ON (autosave active)";
+    return true;
+  } catch (e) {
+    console.warn("Remembered folder could not be loaded", e);
+    return false;
+  }
+}
+
+async function flushAutosaveNow() {
+  if (!state || !state._dirty) return;
+  if (supabaseClient && isAdmin()) {
+    await portalSaveCatalogue();
+    return;
+  }
+  if (!fs.folderHandle) return;
+  if (autosaveTimer) {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+  }
+  await doAutosave();
+}
+
+const DEFAULT_CUSTOMS_CODES = {
+  sponge: '19059070',
+  wafer: '19053219',
+  biscuit: '19053119',
+  savoiardi: '19059080',
+  chips: '20052020'
+};
+
+function inferCustomsCode(product) {
+  if (!product) return '';
+  const explicit = String(product.customsCode || '').trim();
+  if (explicit) return explicit;
+
+  const categoryNames = getProductCategoryNames(product).map(x => String(x || '').toLowerCase());
+  const name = String(product.name || '').toLowerCase();
+  const all = [name, ...categoryNames].join(' | ');
+
+  if (all.includes('patatine')) return DEFAULT_CUSTOMS_CODES.chips;
+  if (all.includes('savoiardi')) return DEFAULT_CUSTOMS_CODES.savoiardi;
+  if (all.includes('wafer')) return DEFAULT_CUSTOMS_CODES.wafer;
+  if (all.includes('biscotti') || all.includes('biscuit')) return DEFAULT_CUSTOMS_CODES.biscuit;
+  if (all.includes('crostatine') || all.includes('crostata') || all.includes('croissant') || all.includes('panettone') || all.includes('colomba')) return DEFAULT_CUSTOMS_CODES.sponge;
+
+  return DEFAULT_CUSTOMS_CODES.sponge;
+}
+
 
 function requestAutosave() {
   if (!fs.folderHandle) return;
@@ -423,6 +574,9 @@ els.stockUnknownExpiry.addEventListener("change", () => {
   const wordings = splitLines(els.prodWordings.value);
   const codes = splitLines(els.prodCodes.value);
   const notes = (els.prodNotes.value || "").trim();
+  const customsCode = (els.prodCustomsCode.value || "").trim();
+  const unitWeightKgRaw = Number(els.prodUnitWeightKg.value);
+  const unitWeightKg = Number.isFinite(unitWeightKgRaw) && unitWeightKgRaw > 0 ? unitWeightKgRaw : null;
   const imageFileName = (els.prodImageFileName.value || "").trim();
 
   if (ui.editingProductId) {
@@ -435,6 +589,8 @@ els.stockUnknownExpiry.addEventListener("change", () => {
     p.wordings = wordings;
     p.codes = codes;
     p.notes = notes;
+    p.customsCode = customsCode;
+    p.unitWeightKg = unitWeightKg;
     p.imageFileName = imageFileName;
     p.lots = normalizeLots(p.lots);
   } else {
@@ -446,6 +602,8 @@ els.stockUnknownExpiry.addEventListener("change", () => {
       wordings,
       codes,
       notes,
+      customsCode,
+      unitWeightKg,
       imageFileName,
       lots: [],
     });
@@ -498,6 +656,7 @@ els.stockUnknownExpiry.addEventListener("change", () => {
   });
 
   if (els.btnShipments) els.btnShipments.addEventListener("click", openShipmentHistoryDlg);
+  if (els.btnSamplesHistory) els.btnSamplesHistory.addEventListener("click", openSamplesHistoryDlg);
   if (els.btnExportExcel) els.btnExportExcel.addEventListener("click", exportCatalogueExcel);
   if (els.btnShipExport) els.btnShipExport.addEventListener("click", exportCatalogueExcel);
   if (els.btnShipCancel) els.btnShipCancel.addEventListener("click", () => els.shipDlg.close());
@@ -506,14 +665,26 @@ els.stockUnknownExpiry.addEventListener("change", () => {
   if (els.shipForm) els.shipForm.addEventListener("submit", onShipSubmit);
   if (els.shipDate) attachDMYMask(els.shipDate);
 
+  if (els.sampleDate) {
+    els.sampleDate.value = formatDateDMY(todayISO());
+    attachDMYMask(els.sampleDate);
+  }
+  if (els.sampleForm) els.sampleForm.addEventListener("submit", onCreateSample);
+  if (els.btnClearSample) els.btnClearSample.addEventListener("click", clearSampleCart);
+  if (els.btnSamplePdf) els.btnSamplePdf.addEventListener("click", () => exportCurrentSamplePdf(false));
+  if (els.btnSampleExcel) els.btnSampleExcel.addEventListener("click", () => exportCurrentSampleExcel(false));
+  if (els.btnSamplesHistClose) els.btnSamplesHistClose.addEventListener("click", () => els.samplesHistDlg.close());
+  if (els.btnSamplesExport) els.btnSamplesExport.addEventListener("click", exportSamplesHistoryExcel);
+  if (els.samplesHistSearch) els.samplesHistSearch.addEventListener("input", renderSamplesHistory);
+
   // locked until loaded
   setEnabled(false);
-  els.filterLine.textContent = "Tip: Chrome/Edge: use “Use catalogue folder…” for auto-load & auto-save. Firefox: use “Load JSON”.";
+  els.filterLine.textContent = "Tip: Chrome/Edge: use “Use catalogue folder…” once and the app will autosave catalogue.json after every change. Firefox/manual JSON cannot write files automatically.";
 
   if (els.folderStatus) {
     els.folderStatus.textContent = window.showDirectoryPicker
       ? "Folder mode: OFF"
-      : "Folder mode: Not supported (use Chrome/Edge)";
+      : "Folder mode: Not supported (use Chrome/Edge for autosave)";
   }
 }
 
@@ -531,11 +702,12 @@ async function openCatalogueFolder() {
     });
 
     fs.folderHandle = dir;
+    await saveRememberedFolderHandle(dir);
     if (els.folderStatus) els.folderStatus.textContent = "Folder mode: ON (loading…)";
 
     await loadJsonFromFolder();
 
-    if (els.folderStatus) els.folderStatus.textContent = "Folder mode: ON (ready)";
+    if (els.folderStatus) els.folderStatus.textContent = "Folder mode: ON (autosave active)";
   } catch {
     // cancelled
   }
@@ -562,7 +734,7 @@ async function loadJsonFromFolder() {
   setDirty(false);
   render();
 
-  els.fileNote.textContent = "Using folder: data/catalogue.json";
+  els.fileNote.textContent = "Using folder: data/catalogue.json • autosave active";
 }
 
 async function saveJsonToFolder() {
@@ -612,7 +784,9 @@ function setEnabled(on) {
   els.btnAddCategory.disabled = !on;
   els.btnAddProduct.disabled = !on;
   if (els.btnShipments) els.btnShipments.disabled = !on;
+  if (els.btnSamplesHistory) els.btnSamplesHistory.disabled = !on;
   if (els.btnExportExcel) els.btnExportExcel.disabled = !on;
+  if (els.samplePanel) els.samplePanel.style.display = on ? "" : "none";
 }
 
 function setDirty(isDirty) {
@@ -637,6 +811,7 @@ function validateAndNormalize(obj) {
   obj.categories = Array.isArray(obj.categories) ? obj.categories : [];
   obj.products  = Array.isArray(obj.products)  ? obj.products  : [];
   obj.shipments = Array.isArray(obj.shipments) ? obj.shipments : [];
+  obj.samples = Array.isArray(obj.samples) ? obj.samples : [];
 
   for (const c of obj.categories) {
     if (!c.id) c.id = uid("cat");
@@ -654,6 +829,28 @@ function validateAndNormalize(obj) {
     s.reference = s.reference || "";
     s.notes = s.notes || "";
     s.createdAt = s.createdAt || new Date().toISOString();
+  }
+
+  for (const s of obj.samples) {
+    if (!s.id) s.id = uid("sample");
+    s.code = s.code || buildSampleCode(s);
+    s.date = s.date || todayISO();
+    s.destination = s.destination || "";
+    s.recipient = s.recipient || "";
+    s.reference = s.reference || "";
+    s.notes = s.notes || "";
+    s.extraUE = !!s.extraUE;
+    s.createdAt = s.createdAt || new Date().toISOString();
+    const rawItems = Array.isArray(s.items) ? s.items : [];
+    s.items = rawItems.map(it => ({
+      productId: it.productId || it.id || "",
+      productName: it.productName || it.name || "",
+      qty: Math.max(1, Math.trunc(Number(it.qty) || 1)),
+      categoryNames: Array.isArray(it.categoryNames) ? it.categoryNames : [],
+      customsCode: String(it.customsCode || '').trim(),
+      unitWeightKg: Number.isFinite(Number(it.unitWeightKg)) ? Number(it.unitWeightKg) : null,
+    })).filter(it => it.productId || it.productName);
+    s.totalQty = Math.max(1, Math.trunc(Number(s.totalQty) || s.items.reduce((sum, it) => sum + it.qty, 0) || 1));
   }
 
   for (const p of obj.products) {
@@ -674,6 +871,8 @@ function validateAndNormalize(obj) {
     p.wordings = Array.isArray(p.wordings) ? p.wordings : [];
     p.codes    = Array.isArray(p.codes)    ? p.codes    : [];
     p.notes = p.notes || "";
+    p.customsCode = String(p.customsCode || "").trim() || inferCustomsCode(p);
+    p.unitWeightKg = Number.isFinite(Number(p.unitWeightKg)) ? Number(p.unitWeightKg) : null;
     p.imageFileName = p.imageFileName || "";
 
     // CT size normalization
@@ -688,6 +887,7 @@ function render() {
   renderCategories();
   renderFilterLine();
   renderProducts();
+  renderSampleCart();
 }
 
 function renderCategories() {
@@ -1031,6 +1231,7 @@ if (showOrderedDot) {
 
   node.querySelector('[data-act="info"]').addEventListener("click", () => openInfoDlg(p.id));
   node.querySelector('[data-act="stock"]').addEventListener("click", () => openStockDlg(p.id));
+  node.querySelector('[data-act="sample"]').addEventListener("click", () => addToSample(p.id));
   node.querySelector('[data-act="ship"]').addEventListener("click", () => openShipDlg(p.id));
   node.querySelector('[data-act="edit"]').addEventListener("click", () => openProductDlg(p.id));
   if (!isAdmin()) {
@@ -1140,6 +1341,8 @@ function openProductDlg(id) {
     els.prodWordings.value = (p.wordings || []).join("\n");
     els.prodCodes.value = (p.codes || []).join("\n");
     els.prodNotes.value = p.notes || "";
+    els.prodCustomsCode.value = p.customsCode || "";
+    els.prodUnitWeightKg.value = p.unitWeightKg || "";
     els.prodImageFileName.value = p.imageFileName || "";
     renderProductPreview(p);
 
@@ -1157,6 +1360,8 @@ function openProductDlg(id) {
     els.prodWordings.value = "";
     els.prodCodes.value = "";
     els.prodNotes.value = "";
+    els.prodCustomsCode.value = "";
+    els.prodUnitWeightKg.value = "";
     els.prodImageFileName.value = "";
     renderProductPreview(null);
   }
@@ -1961,6 +2166,440 @@ function withdrawFromLots(p, qtyNeeded) {
   return remaining === 0;
 }
 
+function sampleCartItemsDetailed() {
+  return sampleCart.map(item => {
+    const product = state?.products?.find(p => p.id === item.productId);
+    return {
+      productId: item.productId,
+      productName: product?.name || item.productName || 'Unknown product',
+      qty: Math.max(1, Math.trunc(Number(item.qty) || 1)),
+      available: product ? availableStock(product) : 0,
+      imageFileName: product?.imageFileName || '',
+      ctSize: product?.ctSize || null,
+      categoryNames: product ? getProductCategoryNames(product) : [],
+      customsCode: inferCustomsCode(product),
+      unitWeightKg: Number.isFinite(Number(product?.unitWeightKg)) ? Number(product.unitWeightKg) : null,
+    };
+  });
+}
+
+function buildSampleCode(sample) {
+  const date = (sample?.date || todayISO()).replace(/-/g, '');
+  const suffix = String((sample?.createdAt || new Date().toISOString()).replace(/\D/g, '')).slice(-6);
+  return `SMP-${date}-${suffix || '000001'}`;
+}
+
+
+function getProductCategoryNames(product) {
+  const ids = Array.isArray(product?.categoryIds) ? product.categoryIds : [];
+  return ids
+    .map(id => state?.categories?.find(c => c.id === id)?.name)
+    .filter(Boolean);
+}
+
+function getDhlProductFamilyAndVariant(item) {
+  const category = (item.categoryNames || [])[0] || '';
+  const fullName = String(item.productName || '').trim();
+  if (!category) return { family: fullName || 'Product', variant: '' };
+  const lowerFull = fullName.toLowerCase();
+  const lowerCat = category.toLowerCase();
+  if (lowerFull === lowerCat) return { family: category, variant: '' };
+  if (lowerFull.startsWith(lowerCat + ' ')) return { family: category, variant: fullName.slice(category.length).trim() };
+  return { family: category, variant: fullName };
+}
+
+function formatWeightKg(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return n.toFixed(3).replace(/\.?0+$/, '');
+}
+
+function buildDhlListText(sample) {
+  const lines = [];
+  lines.push(`DHL / Extra UE List - ${sample.code}`);
+  lines.push(`Date: ${formatDateDMY(sample.date)}`);
+  if (sample.destination) lines.push(`Destination: ${sample.destination}`);
+  if (sample.recipient) lines.push(`Recipient: ${sample.recipient}`);
+  if (sample.reference) lines.push(`Reference: ${sample.reference}`);
+  lines.push('');
+
+  (sample.items || []).forEach((item, index) => {
+    const customs = item.customsCode || '[customs code missing]';
+    const { family, variant } = getDhlProductFamilyAndVariant(item);
+    lines.push(String(customs));
+    lines.push(`BALCONI [${family || 'Product'}]${variant ? ` [${variant}]` : ''}`);
+    lines.push(`[${formatWeightKg(item.unitWeightKg) || 'weight missing'}] kg`);
+    if (item.qty > 1) lines.push(`Qty: ${item.qty}`);
+    if (index < (sample.items || []).length - 1) lines.push('');
+  });
+
+  return lines.join('\n');
+}
+
+function downloadTextFile(filename, content) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportSampleDhlList(sample, download = true) {
+  const text = buildDhlListText(sample);
+  if (download) downloadTextFile(`${sample.code}_DHL_List.txt`, text);
+  return text;
+}
+
+function getSampleDraftData() {
+  const dateISO = parseDMYToISO(els.sampleDate?.value || '') || todayISO();
+  const items = sampleCartItemsDetailed();
+  return {
+    date: dateISO,
+    destination: (els.sampleDestination?.value || '').trim(),
+    recipient: (els.sampleRecipient?.value || '').trim(),
+    reference: (els.sampleReference?.value || '').trim(),
+    notes: (els.sampleNotes?.value || '').trim(),
+    extraUE: !!els.sampleExtraUE?.checked,
+    items,
+    totalQty: items.reduce((sum, item) => sum + item.qty, 0)
+  };
+}
+
+function resetSampleForm() {
+  if (els.sampleDate) els.sampleDate.value = formatDateDMY(todayISO());
+  if (els.sampleDestination) els.sampleDestination.value = '';
+  if (els.sampleRecipient) els.sampleRecipient.value = '';
+  if (els.sampleReference) els.sampleReference.value = '';
+  if (els.sampleNotes) els.sampleNotes.value = '';
+  if (els.sampleExtraUE) els.sampleExtraUE.checked = false;
+}
+
+function clearSampleCart() {
+  sampleCart = [];
+  resetSampleForm();
+  renderSampleCart();
+}
+
+function addToSample(productId) {
+  if (!state) return;
+  const product = state.products.find(p => p.id === productId);
+  if (!product) return;
+  const existing = sampleCart.find(item => item.productId === productId);
+  if (existing) existing.qty += 1;
+  else sampleCart.push({ productId: product.id, productName: product.name, qty: 1 });
+  renderSampleCart();
+}
+
+function updateSampleQty(productId, nextQty) {
+  const qty = Math.max(1, Math.trunc(Number(nextQty) || 1));
+  const item = sampleCart.find(x => x.productId === productId);
+  if (!item) return;
+  item.qty = qty;
+  renderSampleCart();
+}
+
+function removeFromSample(productId) {
+  sampleCart = sampleCart.filter(x => x.productId !== productId);
+  renderSampleCart();
+}
+
+function renderSampleCart() {
+  if (!els.sampleCartList) return;
+  const items = sampleCartItemsDetailed();
+  els.sampleCartList.innerHTML = '';
+
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sampleEmpty';
+    empty.textContent = 'Add one or more products to prepare the sample.';
+    els.sampleCartList.appendChild(empty);
+  } else {
+    for (const item of items) {
+      const node = els.sampleRowTpl.content.cloneNode(true);
+      node.querySelector('.sampleItemName').textContent = item.productName;
+      node.querySelector('.sampleItemMeta').textContent = `Available: ${item.available} units${item.customsCode ? ` • Customs: ${item.customsCode}` : ''}${item.unitWeightKg ? ` • ${formatWeightKg(item.unitWeightKg)} kg` : ''}`;
+      const input = node.querySelector('.sampleQtyInput');
+      input.value = item.qty;
+      input.addEventListener('change', () => updateSampleQty(item.productId, input.value));
+      node.querySelector('[data-act="minus"]').addEventListener('click', () => updateSampleQty(item.productId, item.qty - 1));
+      node.querySelector('[data-act="plus"]').addEventListener('click', () => updateSampleQty(item.productId, item.qty + 1));
+      node.querySelector('[data-act="remove"]').addEventListener('click', () => removeFromSample(item.productId));
+      els.sampleCartList.appendChild(node);
+    }
+  }
+
+  const totalProducts = items.length;
+  const totalUnits = items.reduce((sum, item) => sum + item.qty, 0);
+  if (els.sampleTotalProducts) els.sampleTotalProducts.textContent = String(totalProducts);
+  if (els.sampleTotalUnits) els.sampleTotalUnits.textContent = String(totalUnits);
+  if (els.sampleCartInfo) els.sampleCartInfo.textContent = totalProducts ? `${totalProducts} product${totalProducts === 1 ? '' : 's'} selected.` : 'No products selected.';
+}
+
+function validateSampleDraft(draft) {
+  if (!draft.items.length) {
+    alert('Add at least one product to the sample cart.');
+    return false;
+  }
+  for (const item of draft.items) {
+    if (item.qty < 1) {
+      alert(`Invalid quantity for ${item.productName}.`);
+      return false;
+    }
+    if (item.qty > item.available) {
+      alert(`${item.productName}: available stock is ${item.available}.`);
+      return false;
+    }
+  }
+  return true;
+}
+
+function createSampleRecordFromDraft(draft) {
+  const createdAt = new Date().toISOString();
+  const sample = {
+    id: uid('sample'),
+    code: buildSampleCode({ date: draft.date, createdAt }),
+    date: draft.date,
+    destination: draft.destination,
+    recipient: draft.recipient,
+    reference: draft.reference,
+    notes: draft.notes,
+    extraUE: !!draft.extraUE,
+    createdAt,
+    items: draft.items.map(item => ({
+      productId: item.productId,
+      productName: item.productName,
+      qty: item.qty,
+      categoryNames: item.categoryNames || [],
+      customsCode: item.customsCode || '',
+      unitWeightKg: item.unitWeightKg ?? null
+    })),
+    totalQty: draft.totalQty
+  };
+  return sample;
+}
+
+function consumeSampleStock(sample) {
+  for (const item of sample.items) {
+    const product = state.products.find(p => p.id === item.productId);
+    if (!product) throw new Error(`Product not found: ${item.productName}`);
+    const ok = withdrawFromLots(product, item.qty);
+    if (!ok) throw new Error(`Could not withdraw stock for ${item.productName}`);
+  }
+}
+
+function sampleItemsText(sample) {
+  return (sample.items || []).map(item => `${item.productName} x${item.qty}`).join(' | ');
+}
+
+function filteredSamples() {
+  const q = (els.samplesHistSearch?.value || '').trim().toLowerCase();
+  const arr = Array.isArray(state?.samples) ? state.samples.slice() : [];
+  arr.sort((a,b) => `${b.date}|${b.createdAt || ''}`.localeCompare(`${a.date}|${a.createdAt || ''}`));
+  if (!q) return arr;
+  return arr.filter(s => [s.code, s.destination, s.recipient, s.reference, s.notes, sampleItemsText(s)].join(' ').toLowerCase().includes(q));
+}
+
+function renderSamplesHistory() {
+  if (!els.samplesHistBody) return;
+  const rows = filteredSamples();
+  els.samplesHistBody.innerHTML = '';
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="8" class="shipEmpty">No samples created yet.</td>';
+    els.samplesHistBody.appendChild(tr);
+  } else {
+    for (const s of rows) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${formatDateDMY(s.date)}</td>
+        <td>${escapeHtml(s.code)}<br><span class="note">${escapeHtml(sampleItemsText(s))}</span></td>
+        <td>${s.totalQty}</td>
+        <td>${escapeHtml(s.destination || '')}</td>
+        <td>${escapeHtml(s.recipient || '')}</td>
+        <td>${escapeHtml(s.reference || '')}</td>
+        <td>${escapeHtml(s.notes || '')}</td>
+        <td class="shipDel">${isAdmin() ? '<button class="btn small ghost danger" type="button">Del</button>' : ''}</td>`;
+      const btn = tr.querySelector('button');
+      if (btn) btn.addEventListener('click', () => deleteSample(s.id));
+      els.samplesHistBody.appendChild(tr);
+    }
+  }
+  if (els.samplesHistCount) els.samplesHistCount.textContent = `${rows.length} sample${rows.length === 1 ? '' : 's'}`;
+}
+
+function openSamplesHistoryDlg() {
+  renderSamplesHistory();
+  els.samplesHistDlg.showModal();
+}
+
+function deleteSample(id) {
+  if (!isAdmin()) return;
+  if (!confirm('Delete this sample record? Stock will not be restored automatically.')) return;
+  state.samples = (state.samples || []).filter(x => x.id !== id);
+  setDirty(true);
+  renderSamplesHistory();
+}
+
+function sampleToExcelRows(sample) {
+  return (sample.items || []).map(item => ({
+    SampleCode: sample.code,
+    Date: sample.date,
+    Product: item.productName,
+    Qty: item.qty,
+    Destination: sample.destination,
+    Recipient: sample.recipient,
+    Reference: sample.reference,
+    ExtraUE: sample.extraUE ? 'Yes' : 'No',
+    Notes: sample.notes
+  }));
+}
+
+function exportSampleExcel(sample, download = true) {
+  if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return null; }
+  const wb = XLSX.utils.book_new();
+  const rows = sampleToExcelRows(sample);
+  const summary = [{
+    SampleCode: sample.code,
+    Date: sample.date,
+    TotalProducts: (sample.items || []).length,
+    TotalQty: sample.totalQty,
+    Destination: sample.destination,
+    Recipient: sample.recipient,
+    Reference: sample.reference,
+    ExtraUE: sample.extraUE ? 'Yes' : 'No',
+    Notes: sample.notes
+  }];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'Summary');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{Info:'No sample items'}]), 'Items');
+  if (download) XLSX.writeFile(wb, `${sample.code}.xlsx`);
+  return wb;
+}
+
+function exportCurrentSampleExcel(requireConfirmation = true) {
+  const draft = getSampleDraftData();
+  if (!validateSampleDraft(draft)) return;
+  const sample = createSampleRecordFromDraft(draft);
+  exportSampleExcel(sample, true);
+}
+
+function exportSamplesHistoryExcel() {
+  if (!state) return;
+  if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
+  const wb = XLSX.utils.book_new();
+  const samples = (state.samples || []).slice().sort((a,b) => `${b.date}|${b.createdAt || ''}`.localeCompare(`${a.date}|${a.createdAt || ''}`));
+  const summaryRows = samples.map(s => ({
+    SampleCode: s.code,
+    Date: s.date,
+    TotalProducts: (s.items || []).length,
+    TotalQty: s.totalQty,
+    Destination: s.destination,
+    Recipient: s.recipient,
+    Reference: s.reference,
+    ExtraUE: s.extraUE ? 'Yes' : 'No',
+    Notes: s.notes
+  }));
+  const itemRows = samples.flatMap(sampleToExcelRows);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows.length ? summaryRows : [{Info:'No samples'}]), 'Samples');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemRows.length ? itemRows : [{Info:'No sample items'}]), 'SampleItems');
+  XLSX.writeFile(wb, `samples_history_${todayISO()}.xlsx`);
+}
+
+function exportSamplePdf(sample, download = true) {
+  const jspdf = window.jspdf?.jsPDF;
+  if (!jspdf) { alert('PDF library not loaded.'); return null; }
+  const doc = new jspdf({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 40;
+  let y = 46;
+
+  const addLine = (label, value = '') => {
+    doc.setFont('helvetica', 'bold');
+    doc.text(String(label), margin, y);
+    doc.setFont('helvetica', 'normal');
+    const lines = doc.splitTextToSize(String(value || '-'), pageWidth - margin * 2 - 90);
+    doc.text(lines, margin + 90, y);
+    y += Math.max(18, lines.length * 14 + 4);
+    if (y > pageHeight - 60) { doc.addPage(); y = 46; }
+  };
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text('Sample Request', margin, y);
+  y += 24;
+  doc.setFontSize(11);
+  addLine('Sample code', sample.code);
+  addLine('Date', formatDateDMY(sample.date));
+  addLine('Destination', sample.destination);
+  addLine('Recipient', sample.recipient);
+  addLine('Reference', sample.reference);
+  addLine('Extra UE / DHL List', sample.extraUE ? 'Yes' : 'No');
+  addLine('Notes', sample.notes);
+
+  y += 8;
+  doc.setFont('helvetica', 'bold');
+  doc.text('Items', margin, y);
+  y += 18;
+
+  (sample.items || []).forEach((item, index) => {
+    const text = `${index + 1}. ${item.productName} — Qty: ${item.qty}`;
+    const lines = doc.splitTextToSize(text, pageWidth - margin * 2);
+    doc.setFont('helvetica', 'normal');
+    doc.text(lines, margin, y);
+    y += lines.length * 14 + 8;
+    if (y > pageHeight - 60) { doc.addPage(); y = 46; }
+  });
+
+  y += 8;
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Total products: ${(sample.items || []).length}`, margin, y);
+  doc.text(`Total qty: ${sample.totalQty}`, pageWidth - 150, y);
+
+  if (sample.extraUE) {
+    y += 18;
+    if (y > pageHeight - 120) { doc.addPage(); y = 46; }
+    doc.setFont('helvetica', 'bold');
+    doc.text('DHL / Extra UE List', margin, y);
+    y += 18;
+    doc.setFont('helvetica', 'normal');
+    const dhlLines = doc.splitTextToSize(buildDhlListText(sample), pageWidth - margin * 2);
+    doc.text(dhlLines, margin, y);
+  }
+
+  if (download) doc.save(`${sample.code}.pdf`);
+  return doc;
+}
+
+function exportCurrentSamplePdf(requireConfirmation = true) {
+  const draft = getSampleDraftData();
+  if (!validateSampleDraft(draft)) return;
+  const sample = createSampleRecordFromDraft(draft);
+  exportSamplePdf(sample, true);
+}
+
+function onCreateSample(e) {
+  e.preventDefault();
+  if (!isAdmin()) { alert('Admin login required.'); return; }
+  const draft = getSampleDraftData();
+  if (!validateSampleDraft(draft)) return;
+  const sample = createSampleRecordFromDraft(draft);
+  consumeSampleStock(sample);
+  state.samples.unshift(sample);
+  sampleCart = [];
+  setDirty(true);
+  render();
+  renderSamplesHistory();
+  exportSamplePdf(sample, true);
+  exportSampleExcel(sample, true);
+  if (sample.extraUE) exportSampleDhlList(sample, true);
+  resetSampleForm();
+  alert(`Sample ${sample.code} created.`);
+}
+
 function openShipDlg(productId) {
   if (!isAdmin()) { alert('Admin login required.'); return; }
   const p = state.products.find(x => x.id === productId);
@@ -2094,11 +2733,27 @@ function exportCatalogueExcel() {
     Destination: s.destination,
     Recipient: s.recipient,
     Reference: s.reference,
+    ExtraUE: s.extraUE ? 'Yes' : 'No',
     Notes: s.notes
   }));
+  const samples = (state.samples || []).slice().sort((a,b) => `${b.date}|${b.createdAt || ''}`.localeCompare(`${a.date}|${a.createdAt || ''}`));
+  const sampleSummary = samples.map(s => ({
+    SampleCode: s.code,
+    Date: s.date,
+    TotalProducts: (s.items || []).length,
+    TotalQty: s.totalQty,
+    Destination: s.destination,
+    Recipient: s.recipient,
+    Reference: s.reference,
+    ExtraUE: s.extraUE ? 'Yes' : 'No',
+    Notes: s.notes
+  }));
+  const sampleItems = samples.flatMap(sampleToExcelRows);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(products.length ? products : [{Info:'No products'}]), 'Products');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lots.length ? lots : [{Info:'No lots'}]), 'Lots');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shipments.length ? shipments : [{Info:'No shipments'}]), 'Shipments');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sampleSummary.length ? sampleSummary : [{Info:'No samples'}]), 'Samples');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sampleItems.length ? sampleItems : [{Info:'No sample items'}]), 'SampleItems');
   const fileName = `campionature_${todayISO()}.xlsx`;
   XLSX.writeFile(wb, fileName);
 }
@@ -2171,14 +2826,21 @@ function createCtPill(count, type) {
 }
 
 (async function bootstrap(){
-  document.addEventListener("DOMContentLoaded", () => {
-  initSupabase();
+  if (document.readyState === "loading") {
+    await new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, { once: true }));
+  }
+
   wire();
-});
   await initSupabase();
   portalSession = loadPortalSession();
   refreshAuthUI();
-  const ok = await loadCatalogueOnline();
+
+  let ok = await loadCatalogueOnline();
+
+  if (!ok) {
+    ok = await restoreRememberedFolderMode();
+  }
+
   if (!ok) {
     try {
       const res = await fetch('catalogue.json');
@@ -2195,5 +2857,18 @@ function createCtPill(count, type) {
       console.warn('Fallback catalogue load failed', e);
     }
   }
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!state?._dirty) return;
+
+    if (fs.folderHandle) {
+      flushAutosaveNow().catch(err => console.warn("Final autosave failed", err));
+      return;
+    }
+
+    event.preventDefault();
+    event.returnValue = "";
+  });
+
   window.sb = supabaseClient;
 })();
