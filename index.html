@@ -41,6 +41,8 @@
       <input class="search" id="search" type="search" placeholder="Search name / wordings / codes…" disabled />
       <button class="btn" id="btnAddProduct" disabled>Add product</button>
       <button class="btn" id="btnAddCategory" disabled>Add category</button>
+      <button class="btn" id="btnShipments" disabled>Shipping history</button>
+      <button class="btn" id="btnExportExcel" disabled>Download Excel</button>
     </div>
 
     <input id="filePicker" type="file" accept="application/json" hidden />
@@ -231,6 +233,78 @@
     </form>
   </dialog>
 
+
+  <!-- Shipment dialog -->
+  <dialog class="dlg" id="shipDlg">
+    <form method="dialog" class="dlgBody wide" id="shipForm">
+      <div class="dlgTitle" id="shipTitle">Register shipment</div>
+      <div class="grid2">
+        <label class="row">
+          <span>Product</span>
+          <input id="shipProductName" type="text" disabled />
+        </label>
+        <label class="row">
+          <span>Date</span>
+          <input id="shipDate" type="text" placeholder="DD/MM/YYYY" inputmode="numeric" />
+        </label>
+      </div>
+      <div class="grid2">
+        <label class="row">
+          <span>Quantity</span>
+          <input id="shipQty" type="number" min="1" step="1" required />
+        </label>
+        <label class="row">
+          <span>Destination</span>
+          <input id="shipDestination" type="text" placeholder="Customer / city / office" />
+        </label>
+      </div>
+      <div class="grid2">
+        <label class="row">
+          <span>Recipient</span>
+          <input id="shipRecipient" type="text" placeholder="Name / department" />
+        </label>
+        <label class="row">
+          <span>Reference</span>
+          <input id="shipReference" type="text" placeholder="Courier / tracking / internal ref" />
+        </label>
+      </div>
+      <label class="row">
+        <span>Notes</span>
+        <textarea id="shipNotes" rows="3"></textarea>
+      </label>
+      <div class="smallNote" id="shipAvailableNote"></div>
+      <div class="dlgBtns">
+        <button class="btn ghost" type="button" id="btnShipCancel">Cancel</button>
+        <button class="btn" type="submit" id="btnShipSave">Register shipment</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Shipment history dialog -->
+  <dialog class="dlg" id="shipHistDlg">
+    <form method="dialog" class="dlgBody wide shipHistBody" id="shipHistForm">
+      <div class="dlgTitle">Shipping history</div>
+      <div class="shipHistTools">
+        <input class="search" id="shipHistSearch" type="search" placeholder="Search product / destination / recipient…" />
+        <button class="btn" type="button" id="btnShipExport">Export Excel</button>
+      </div>
+      <div class="shipTableWrap">
+        <table class="shipTable">
+          <thead>
+            <tr>
+              <th>Date</th><th>Product</th><th>Qty</th><th>Destination</th><th>Recipient</th><th>Reference</th><th>Notes</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="shipHistBody"></tbody>
+        </table>
+      </div>
+      <div class="smallNote" id="shipHistCount"></div>
+      <div class="dlgBtns">
+        <button class="btn ghost" type="button" id="btnShipHistClose">Close</button>
+      </div>
+    </form>
+  </dialog>
+
   <template id="cardTpl">
     <div class="card">
       <div class="thumb">
@@ -253,6 +327,7 @@
           <button class="btn small ghost" data-act="info">More info…</button>
           <button class="btn small" data-act="stock">Stock…</button>
           <button class="btn small ghost" data-act="edit">Edit</button>
+          <button class="btn small ghost" data-act="ship">Ship…</button>
           <button class="btn small ghost danger" data-act="del">Delete</button>
         </div>
       </div>
@@ -262,15 +337,12 @@
   
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  window.SUPABASE_URL = "https://ocsctsikfeklqqsuicls.supabase.co";
-  window.SUPABASE_ANON_KEY = "sb_publishable_FPoftaXY3jc_1A_HPVHFAA_9Bl6Kj1i";
+  window.SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL";
+  window.SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY";
   window.SUPABASE_FN_NAME = "hyper-worker";
 </script>
 
-<script>
-window.ADMIN_USERNAME = "omaggi";
-window.ADMIN_EMAIL = "omaggi@campionature.local";
-</script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

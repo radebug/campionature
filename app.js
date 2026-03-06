@@ -12,6 +12,8 @@ const els = {
   search: $("#search"),
   btnAddProduct: $("#btnAddProduct"),
   btnAddCategory: $("#btnAddCategory"),
+  btnShipments: $("#btnShipments"),
+  btnExportExcel: $("#btnExportExcel"),
 
   catSearch: $("#catSearch"),
   categoryList: $("#categoryList"),
@@ -63,24 +65,73 @@ stockUnknownExpiry: $("#stockUnknownExpiry"),
   btnProdCancel: $("#btnProdCancel"), 
   btnProdDuplicate: $("#btnProdDuplicate"),
 
+  shipDlg: $("#shipDlg"),
+  shipForm: $("#shipForm"),
+  shipTitle: $("#shipTitle"),
+  shipProductName: $("#shipProductName"),
+  shipDate: $("#shipDate"),
+  shipQty: $("#shipQty"),
+  shipDestination: $("#shipDestination"),
+  shipRecipient: $("#shipRecipient"),
+  shipReference: $("#shipReference"),
+  shipNotes: $("#shipNotes"),
+  shipAvailableNote: $("#shipAvailableNote"),
+  btnShipCancel: $("#btnShipCancel"),
+  shipHistDlg: $("#shipHistDlg"),
+  shipHistBody: $("#shipHistBody"),
+  shipHistSearch: $("#shipHistSearch"),
+  shipHistCount: $("#shipHistCount"),
+  btnShipHistClose: $("#btnShipHistClose"),
+  btnShipExport: $("#btnShipExport"),
+
   cardTpl: $("#cardTpl"),
 };
 
 
+// Stock unit selector (Units vs CTs)
+stockUnitSelector.id = "stockUnitSelector";
+stockUnitSelector.innerHTML = `
+    <option value="units">Units</option>
+    <option value="ct">Cartons (CT)</option>
+`;
 
-/* -------------------- Supabase Auth (simple admin login) -------------------- */
+
+
+/* -------------------- Supabase + Portal Auth (username/password) -------------------- */
 const SUPABASE_URL = window.SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY;
+const SUPABASE_FN_NAME = window.SUPABASE_FN_NAME || "hyper-worker";
 const CATALOGUE_ROW_ID = "main";
-const ADMIN_USERNAME = window.ADMIN_USERNAME || "omaggi";
-const ADMIN_EMAIL = window.ADMIN_EMAIL || "";
 
 let supabaseClient = null;
-let adminSession = null;
 
-function isAdmin() {
-  return !!adminSession;
+const PORTAL_SESSION_KEY = "portal_session_v1";
+let portalSession = null; // { token, role, username, exp }
+
+function loadPortalSession() {
+  try {
+    const raw = localStorage.getItem(PORTAL_SESSION_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s?.token) return null;
+    if (s.exp && Date.now() > (s.exp * 1000)) {
+      localStorage.removeItem(PORTAL_SESSION_KEY);
+      return null;
+    }
+    return s;
+  } catch { return null; }
 }
+function savePortalSession(s) {
+  portalSession = s;
+  localStorage.setItem(PORTAL_SESSION_KEY, JSON.stringify(s));
+  refreshAuthUI();
+}
+function clearPortalSession() {
+  portalSession = null;
+  localStorage.removeItem(PORTAL_SESSION_KEY);
+  refreshAuthUI();
+}
+function isAdmin() { return portalSession?.role === "admin"; }
 
 function refreshAuthUI() {
   const st = document.getElementById("authStatus");
@@ -89,8 +140,8 @@ function refreshAuthUI() {
   const u = document.getElementById("authUser");
   const p = document.getElementById("authPass");
 
-  if (adminSession) {
-    if (st) st.textContent = `Logged as ${ADMIN_USERNAME} (admin)`;
+  if (portalSession?.token) {
+    if (st) st.textContent = `Logged as ${portalSession.username} (${portalSession.role})`;
     if (btnLogin) btnLogin.style.display = "none";
     if (btnLogout) btnLogout.style.display = "";
     if (u) u.style.display = "none";
@@ -110,6 +161,8 @@ function refreshAuthUI() {
   }
   if (els?.btnAddProduct) els.btnAddProduct.style.display = editable ? "" : "none";
   if (els?.btnAddCategory) els.btnAddCategory.style.display = editable ? "" : "none";
+  if (els?.btnShipments) els.btnShipments.disabled = !state;
+  if (els?.btnExportExcel) els.btnExportExcel.disabled = !state;
 }
 
 async function initSupabase() {
@@ -118,13 +171,6 @@ async function initSupabase() {
     return;
   }
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  const { data } = await supabaseClient.auth.getSession();
-  adminSession = data?.session || null;
-  refreshAuthUI();
-  supabaseClient.auth.onAuthStateChange((_event, session) => {
-    adminSession = session || null;
-    refreshAuthUI();
-  });
 }
 
 async function loadCatalogueOnline() {
@@ -155,54 +201,22 @@ async function portalLogin(username, password) {
     alert("Supabase not configured (URL/ANON key missing).");
     return;
   }
-  const u = String(username || "").trim();
-  const p = String(password || "");
-  if (!u || !p) {
-    alert("Inserisci username e password.");
-    return;
-  }
-  if (u !== ADMIN_USERNAME) {
-    alert("Username non valido.");
-    return;
-  }
-  if (!ADMIN_EMAIL) {
-    alert("ADMIN_EMAIL non configurata in index.html.");
-    return;
-  }
-
-  const { error } = await supabaseClient.auth.signInWithPassword({
-    email: ADMIN_EMAIL,
-    password: p,
+  const { data, error } = await supabaseClient.functions.invoke(SUPABASE_FN_NAME, {
+    body: { action: "login", username, password }
   });
-
-  if (error) {
-    alert("Login failed: " + error.message);
-    return;
-  }
-}
-
-async function portalLogout() {
-  if (!supabaseClient) return;
-  await supabaseClient.auth.signOut();
+  if (error) { alert("Login failed: " + error.message); return; }
+  if (!data?.ok) { alert(data?.error || "Invalid credentials"); return; }
+  savePortalSession({ token: data.token, role: data.role, username: data.username, exp: data.exp });
 }
 
 async function portalSaveCatalogue() {
-  if (!isAdmin()) {
-    alert("Admin login required to save.");
-    return;
-  }
-  if (!supabaseClient) {
-    alert("Supabase not configured yet.");
-    return;
-  }
-  const { error } = await supabaseClient
-    .from("catalogue")
-    .upsert({ id: CATALOGUE_ROW_ID, data: state }, { onConflict: "id" });
-
-  if (error) {
-    alert("Save failed: " + error.message);
-    return;
-  }
+  if (!isAdmin()) { alert("Admin login required to save."); return; }
+  if (!supabaseClient) { alert("Supabase not configured yet."); return; }
+  const { data, error } = await supabaseClient.functions.invoke(SUPABASE_FN_NAME, {
+    body: { action: "save", token: portalSession.token, catalogue: state }
+  });
+  if (error) { alert("Save failed: " + error.message); return; }
+  if (!data?.ok) { alert(data?.error || "Save failed"); return; }
   setDirty(false);
   alert("Saved online ✅");
 }
@@ -312,33 +326,6 @@ els.stockUnknownExpiry.addEventListener("change", () => {
     }
   });
 
-
-  // Admin auth
-  const btnLogin = document.getElementById("btnLogin");
-  const btnLogout = document.getElementById("btnLogout");
-  const authUser = document.getElementById("authUser");
-  const authPass = document.getElementById("authPass");
-
-  if (btnLogin) {
-    btnLogin.addEventListener("click", async () => {
-      await portalLogin(authUser?.value || "", authPass?.value || "");
-    });
-  }
-
-  if (btnLogout) {
-    btnLogout.addEventListener("click", async () => {
-      await portalLogout();
-    });
-  }
-
-  if (authPass) {
-    authPass.addEventListener("keydown", async (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        await portalLogin(authUser?.value || "", authPass?.value || "");
-      }
-    });
-  }
   // Search
   els.search.addEventListener("input", () => {
     ui.search = els.search.value.trim();
@@ -460,6 +447,15 @@ els.stockUnknownExpiry.addEventListener("change", () => {
     }
   });
 
+  if (els.btnShipments) els.btnShipments.addEventListener("click", openShipmentHistoryDlg);
+  if (els.btnExportExcel) els.btnExportExcel.addEventListener("click", exportCatalogueExcel);
+  if (els.btnShipExport) els.btnShipExport.addEventListener("click", exportCatalogueExcel);
+  if (els.btnShipCancel) els.btnShipCancel.addEventListener("click", () => els.shipDlg.close());
+  if (els.btnShipHistClose) els.btnShipHistClose.addEventListener("click", () => els.shipHistDlg.close());
+  if (els.shipHistSearch) els.shipHistSearch.addEventListener("input", renderShipmentHistory);
+  if (els.shipForm) els.shipForm.addEventListener("submit", onShipSubmit);
+  if (els.shipDate) attachDMYMask(els.shipDate);
+
   // locked until loaded
   setEnabled(false);
   els.filterLine.textContent = "Tip: Chrome/Edge: use “Use catalogue folder…” for auto-load & auto-save. Firefox: use “Load JSON”.";
@@ -565,6 +561,8 @@ function setEnabled(on) {
   els.search.disabled = !on;
   els.btnAddCategory.disabled = !on;
   els.btnAddProduct.disabled = !on;
+  if (els.btnShipments) els.btnShipments.disabled = !on;
+  if (els.btnExportExcel) els.btnExportExcel.disabled = !on;
 }
 
 function setDirty(isDirty) {
@@ -588,10 +586,24 @@ function validateAndNormalize(obj) {
   obj.version = 1;
   obj.categories = Array.isArray(obj.categories) ? obj.categories : [];
   obj.products  = Array.isArray(obj.products)  ? obj.products  : [];
+  obj.shipments = Array.isArray(obj.shipments) ? obj.shipments : [];
 
   for (const c of obj.categories) {
     if (!c.id) c.id = uid("cat");
     if (!c.name) c.name = "Unnamed";
+  }
+
+  for (const s of obj.shipments) {
+    if (!s.id) s.id = uid("ship");
+    s.productId = s.productId || "";
+    s.productName = s.productName || "";
+    s.date = s.date || todayISO();
+    s.qty = Math.max(1, Math.trunc(Number(s.qty) || 1));
+    s.destination = s.destination || "";
+    s.recipient = s.recipient || "";
+    s.reference = s.reference || "";
+    s.notes = s.notes || "";
+    s.createdAt = s.createdAt || new Date().toISOString();
   }
 
   for (const p of obj.products) {
@@ -969,7 +981,13 @@ if (showOrderedDot) {
 
   node.querySelector('[data-act="info"]').addEventListener("click", () => openInfoDlg(p.id));
   node.querySelector('[data-act="stock"]').addEventListener("click", () => openStockDlg(p.id));
+  node.querySelector('[data-act="ship"]').addEventListener("click", () => openShipDlg(p.id));
   node.querySelector('[data-act="edit"]').addEventListener("click", () => openProductDlg(p.id));
+  if (!isAdmin()) {
+    node.querySelector('[data-act="edit"]').style.display = "none";
+    node.querySelector('[data-act="del"]').style.display = "none";
+    node.querySelector('[data-act="ship"]').style.display = "none";
+  }
   node.querySelector('[data-act="del"]').addEventListener("click", () => {
     if (!confirm(`Delete "${p.name}"?`)) return;
     state.products = state.products.filter(x => x.id !== p.id);
@@ -1862,6 +1880,183 @@ if (els.stockUnknownExpiry.checked) {
   render();
 }
 
+
+function availableStock(p) {
+  return normalizeLots((p?.lots || []).filter(l => !l.ordered)).reduce((s, l) => s + l.qty, 0);
+}
+
+function sortedRealLotsForShipping(p) {
+  return normalizeLots((p?.lots || []).filter(l => !l.ordered && l.qty > 0)).sort((a, b) => {
+    const av = a.expiry === "__unknown__" ? "9999-12-31" : a.expiry;
+    const bv = b.expiry === "__unknown__" ? "9999-12-31" : b.expiry;
+    return av.localeCompare(bv);
+  });
+}
+
+function withdrawFromLots(p, qtyNeeded) {
+  let remaining = Math.max(0, Math.trunc(Number(qtyNeeded) || 0));
+  if (!remaining) return true;
+  const lots = (p.lots || []).filter(l => !l.ordered && l.qty > 0).sort((a,b) => {
+    const av = a.expiry === "__unknown__" ? "9999-12-31" : a.expiry;
+    const bv = b.expiry === "__unknown__" ? "9999-12-31" : b.expiry;
+    return av.localeCompare(bv);
+  });
+  for (const lot of lots) {
+    if (remaining <= 0) break;
+    const take = Math.min(lot.qty, remaining);
+    lot.qty -= take;
+    remaining -= take;
+  }
+  p.lots = normalizeLots((p.lots || []).filter(l => l.qty > 0 || l.ordered));
+  return remaining === 0;
+}
+
+function openShipDlg(productId) {
+  if (!isAdmin()) { alert('Admin login required.'); return; }
+  const p = state.products.find(x => x.id === productId);
+  if (!p) return;
+  ui.shipProductId = productId;
+  els.shipTitle.textContent = `Register shipment — ${p.name}`;
+  els.shipProductName.value = p.name;
+  els.shipDate.value = formatDateDMY(todayISO());
+  els.shipQty.value = '';
+  els.shipDestination.value = '';
+  els.shipRecipient.value = '';
+  els.shipReference.value = '';
+  els.shipNotes.value = '';
+  els.shipAvailableNote.textContent = `Available stock: ${availableStock(p)} units`;
+  els.shipDlg.showModal();
+}
+
+function onShipSubmit(e) {
+  e.preventDefault();
+  const p = state.products.find(x => x.id === ui.shipProductId);
+  if (!p) return;
+  const dateISO = parseDMYToISO(els.shipDate.value || '') || todayISO();
+  const qty = Math.max(0, Math.trunc(Number(els.shipQty.value) || 0));
+  const destination = (els.shipDestination.value || '').trim();
+  const recipient = (els.shipRecipient.value || '').trim();
+  const reference = (els.shipReference.value || '').trim();
+  const notes = (els.shipNotes.value || '').trim();
+  if (qty < 1) { alert('Quantity must be at least 1.'); return; }
+  const available = availableStock(p);
+  if (qty > available) { alert(`Available stock is ${available}.`); return; }
+  const ok = withdrawFromLots(p, qty);
+  if (!ok) { alert('Could not register shipment.'); return; }
+  state.shipments.unshift({
+    id: uid('ship'),
+    date: dateISO,
+    productId: p.id,
+    productName: p.name,
+    qty,
+    destination,
+    recipient,
+    reference,
+    notes,
+    createdAt: new Date().toISOString()
+  });
+  els.shipDlg.close();
+  setDirty(true);
+  render();
+  renderShipmentHistory();
+}
+
+function filteredShipments() {
+  const q = (els.shipHistSearch?.value || '').trim().toLowerCase();
+  const arr = Array.isArray(state?.shipments) ? state.shipments.slice() : [];
+  arr.sort((a,b) => `${b.date}|${b.createdAt || ''}`.localeCompare(`${a.date}|${a.createdAt || ''}`));
+  if (!q) return arr;
+  return arr.filter(s => [s.productName, s.destination, s.recipient, s.reference, s.notes].join(' ').toLowerCase().includes(q));
+}
+
+function renderShipmentHistory() {
+  if (!els.shipHistBody) return;
+  const rows = filteredShipments();
+  els.shipHistBody.innerHTML = '';
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="8" class="shipEmpty">No shipments registered yet.</td>';
+    els.shipHistBody.appendChild(tr);
+  } else {
+    for (const s of rows) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${formatDateDMY(s.date)}</td>
+        <td>${escapeHtml(s.productName || '')}</td>
+        <td>${s.qty}</td>
+        <td>${escapeHtml(s.destination || '')}</td>
+        <td>${escapeHtml(s.recipient || '')}</td>
+        <td>${escapeHtml(s.reference || '')}</td>
+        <td>${escapeHtml(s.notes || '')}</td>
+        <td class="shipDel">${isAdmin() ? '<button class="btn small ghost danger" type="button">Del</button>' : ''}</td>`;
+      const btn = tr.querySelector('button');
+      if (btn) btn.addEventListener('click', () => deleteShipment(s.id));
+      els.shipHistBody.appendChild(tr);
+    }
+  }
+  if (els.shipHistCount) els.shipHistCount.textContent = `${rows.length} shipment${rows.length === 1 ? '' : 's'}`;
+}
+
+function openShipmentHistoryDlg() {
+  renderShipmentHistory();
+  els.shipHistDlg.showModal();
+}
+
+function deleteShipment(id) {
+  if (!isAdmin()) return;
+  if (!confirm('Delete this shipment record?')) return;
+  state.shipments = (state.shipments || []).filter(x => x.id !== id);
+  setDirty(true);
+  renderShipmentHistory();
+}
+
+function exportCatalogueExcel() {
+  if (!state) return;
+  if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
+  const wb = XLSX.utils.book_new();
+  const products = (state.products || []).slice().sort((a,b) => a.name.localeCompare(b.name)).map(p => ({
+    Product: p.name,
+    Categories: (p.categoryIds || []).map(id => state.categories.find(c => c.id === id)?.name).filter(Boolean).join(', '),
+    Stock: totalStock(p),
+    AvailableStock: availableStock(p),
+    CTSize: p.ctSize || '',
+    Image: p.imageFileName || '',
+    Wordings: (p.wordings || []).join(' | '),
+    Codes: (p.codes || []).join(' | '),
+    Notes: p.notes || ''
+  }));
+  const lots = [];
+  for (const p of (state.products || [])) {
+    for (const l of normalizeLots(p.lots || [])) {
+      lots.push({
+        Product: p.name,
+        Expiry: l.expiry === '__unknown__' ? 'Unknown' : l.expiry,
+        Qty: l.qty,
+        Ordered: l.ordered ? 'Yes' : 'No',
+        Status: l.ordered ? 'Ordered' : lotStatus(l.expiry)
+      });
+    }
+  }
+  const shipments = (state.shipments || []).slice().sort((a,b) => `${b.date}|${b.createdAt || ''}`.localeCompare(`${a.date}|${a.createdAt || ''}`)).map(s => ({
+    Date: s.date,
+    Product: s.productName,
+    Qty: s.qty,
+    Destination: s.destination,
+    Recipient: s.recipient,
+    Reference: s.reference,
+    Notes: s.notes
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(products.length ? products : [{Info:'No products'}]), 'Products');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lots.length ? lots : [{Info:'No lots'}]), 'Lots');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shipments.length ? shipments : [{Info:'No shipments'}]), 'Shipments');
+  const fileName = `campionature_${todayISO()}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+}
+
 /* Image copy (folder mode) */
 function sanitizeFileName(name) {
   const s = (name || "").trim();
@@ -1924,25 +2119,28 @@ function createCtPill(count, type) {
   span.textContent = `${count} CT`;
   return span;
 }
-(async function bootstrap() {
+
+(async function bootstrap(){
   wire();
   await initSupabase();
+  portalSession = loadPortalSession();
   refreshAuthUI();
   const ok = await loadCatalogueOnline();
   if (!ok) {
     try {
-      const res = await fetch("catalogue.json", { cache: "no-store" });
-      if (!res.ok) throw new Error("catalogue.json not found");
+      const res = await fetch('catalogue.json');
+      if (!res.ok) throw new Error('catalogue.json not found');
       const obj = await res.json();
       validateAndNormalize(obj);
       state = obj;
-      loadedFileName = "catalogue.json";
+      loadedFileName = 'catalogue.json';
       setEnabled(true);
       setDirty(false);
       render();
-    } catch (err) {
-      console.error(err);
-      alert("Impossibile caricare il catalogo da Supabase o da catalogue.json");
+      refreshAuthUI();
+    } catch (e) {
+      console.warn('Fallback catalogue load failed', e);
     }
   }
+  window.sb = supabaseClient;
 })();
