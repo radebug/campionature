@@ -68,6 +68,7 @@ stockUnknownExpiry: $("#stockUnknownExpiry"),
 
 
 // Stock unit selector (Units vs CTs)
+const stockUnitSelector = document.createElement("div");
 stockUnitSelector.id = "stockUnitSelector";
 stockUnitSelector.innerHTML = `
     <option value="units">Units</option>
@@ -1946,3 +1947,28 @@ function createCtPill(count, type) {
 }
 
 wire();
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    wire();
+    await initSupabase();
+    portalSession = loadPortalSession();
+    refreshAuthUI();
+
+    const ok = await loadCatalogueOnline();
+    if (!ok) {
+      const res = await fetch("catalogue.json");
+      if (!res.ok) throw new Error("catalogue.json not found");
+      const obj = await res.json();
+      validateAndNormalize(obj);
+      state = obj;
+      loadedFileName = "catalogue.json";
+      setEnabled(true);
+      setDirty(false);
+      render();
+    }
+
+    window.sb = supabaseClient;
+  } catch (err) {
+    console.error("Bootstrap error:", err);
+  }
+});
