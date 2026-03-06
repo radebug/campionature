@@ -288,6 +288,49 @@ async function doAutosave() {
 }
 
 function wire() {
+	  // Auth buttons
+  const btnLogin = document.getElementById("btnLogin");
+  const btnLogout = document.getElementById("btnLogout");
+  const authUser = document.getElementById("authUser");
+  const authPass = document.getElementById("authPass");
+
+  if (btnLogin) {
+    btnLogin.addEventListener("click", async () => {
+      const username = (authUser?.value || "omaggi").trim();
+      const password = (authPass?.value || "").trim();
+
+      if (!password) {
+        alert("Inserisci la password");
+        return;
+      }
+
+      await portalLogin(username, password);
+      refreshAuthUI();
+      render();
+    });
+  }
+
+  if (btnLogout) {
+    btnLogout.addEventListener("click", async () => {
+      try {
+        if (window.sb?.auth) await window.sb.auth.signOut();
+      } catch (e) {
+        console.warn(e);
+      }
+      clearPortalSession();
+      refreshAuthUI();
+      render();
+    });
+  }
+
+  if (authPass) {
+    authPass.addEventListener("keydown", async (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        btnLogin?.click();
+      }
+    });
+  }
   // Folder mode
   if (els.btnOpenFolder) {
     els.btnOpenFolder.addEventListener("click", openCatalogueFolder);
@@ -2128,7 +2171,10 @@ function createCtPill(count, type) {
 }
 
 (async function bootstrap(){
+  document.addEventListener("DOMContentLoaded", () => {
+  initSupabase();
   wire();
+});
   await initSupabase();
   portalSession = loadPortalSession();
   refreshAuthUI();
