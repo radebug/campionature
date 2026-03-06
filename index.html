@@ -41,8 +41,10 @@
       <input class="search" id="search" type="search" placeholder="Search name / wordings / codes…" disabled />
       <button class="btn" id="btnAddProduct" disabled>Add product</button>
       <button class="btn" id="btnAddCategory" disabled>Add category</button>
-      <button class="btn" id="btnShipments" disabled>Shipping history</button>
-      <button class="btn" id="btnExportExcel" disabled>Download Excel</button>
+      <button class="btn ghost" id="btnCustomers" style="display:none">Customers</button>
+      <button class="btn ghost" id="btnShipments">Shipments</button>
+      <button class="btn" id="btnCart">Cart (<span id="cartCount">0</span>)</button>
+      <button class="btn ghost" id="btnExportExcel">Download Excel</button>
     </div>
 
     <input id="filePicker" type="file" accept="application/json" hidden />
@@ -234,73 +236,98 @@
   </dialog>
 
 
-  <!-- Shipment dialog -->
-  <dialog class="dlg" id="shipDlg">
-    <form method="dialog" class="dlgBody wide" id="shipForm">
-      <div class="dlgTitle" id="shipTitle">Register shipment</div>
-      <div class="grid2">
-        <label class="row">
-          <span>Product</span>
-          <input id="shipProductName" type="text" disabled />
-        </label>
-        <label class="row">
-          <span>Date</span>
-          <input id="shipDate" type="text" placeholder="DD/MM/YYYY" inputmode="numeric" />
-        </label>
+  <!-- Cart / Shipment dialog -->
+  <dialog class="dlg" id="cartDlg">
+    <form method="dialog" class="dlgBody wide" id="cartForm">
+      <div class="dlgTitle">Create shipment</div>
+      <div class="smallNote">Add products to the cart, choose a customer once, then save the shipment.</div>
+      <div class="cartLayout">
+        <div class="panel">
+          <div class="panelTitle">Cart items</div>
+          <div id="cartItems" class="stackList"></div>
+        </div>
+        <div class="panel">
+          <div class="panelTitle">Destination</div>
+          <label class="row">
+            <span>Saved customer</span>
+            <select id="cartCustomerSelect"></select>
+          </label>
+          <div class="rowBtns">
+            <button class="btn ghost" type="button" id="btnManageCustomers">Manage customers</button>
+          </div>
+          <div class="grid2">
+            <label class="row"><span>Company</span><input id="destName" /></label>
+            <label class="row"><span>Contact</span><input id="destContact" /></label>
+          </div>
+          <div class="grid2">
+            <label class="row"><span>Address</span><input id="destAddress" /></label>
+            <label class="row"><span>Phone</span><input id="destPhone" /></label>
+          </div>
+          <div class="grid2">
+            <label class="row"><span>City</span><input id="destCity" /></label>
+            <label class="row"><span>Country</span><input id="destCountry" /></label>
+          </div>
+          <label class="row"><span>Notes</span><textarea id="destNotes" rows="3"></textarea></label>
+          <div class="rowBtns">
+            <button class="btn" type="button" id="btnSaveShipment">Confirm shipment</button>
+          </div>
+          <div class="smallNote" id="cartMsg"></div>
+        </div>
       </div>
-      <div class="grid2">
-        <label class="row">
-          <span>Quantity</span>
-          <input id="shipQty" type="number" min="1" step="1" required />
-        </label>
-        <label class="row">
-          <span>Destination</span>
-          <input id="shipDestination" type="text" placeholder="Customer / city / office" />
-        </label>
-      </div>
-      <div class="grid2">
-        <label class="row">
-          <span>Recipient</span>
-          <input id="shipRecipient" type="text" placeholder="Name / department" />
-        </label>
-        <label class="row">
-          <span>Reference</span>
-          <input id="shipReference" type="text" placeholder="Courier / tracking / internal ref" />
-        </label>
-      </div>
-      <label class="row">
-        <span>Notes</span>
-        <textarea id="shipNotes" rows="3"></textarea>
-      </label>
-      <div class="smallNote" id="shipAvailableNote"></div>
       <div class="dlgBtns">
-        <button class="btn ghost" type="button" id="btnShipCancel">Cancel</button>
-        <button class="btn" type="submit" id="btnShipSave">Register shipment</button>
+        <button class="btn ghost" type="button" id="btnCartClose">Close</button>
       </div>
     </form>
   </dialog>
 
-  <!-- Shipment history dialog -->
-  <dialog class="dlg" id="shipHistDlg">
-    <form method="dialog" class="dlgBody wide shipHistBody" id="shipHistForm">
-      <div class="dlgTitle">Shipping history</div>
-      <div class="shipHistTools">
-        <input class="search" id="shipHistSearch" type="search" placeholder="Search product / destination / recipient…" />
-        <button class="btn" type="button" id="btnShipExport">Export Excel</button>
+  <!-- Customers dialog -->
+  <dialog class="dlg" id="customersDlg">
+    <form method="dialog" class="dlgBody wide" id="customersForm">
+      <div class="dlgTitle">Customers</div>
+      <div class="cartLayout">
+        <div class="panel">
+          <div class="panelTitle">Saved customers</div>
+          <div id="customersList" class="stackList"></div>
+        </div>
+        <div class="panel">
+          <div class="panelTitle">New / edit customer</div>
+          <input type="hidden" id="customerId" />
+          <div class="grid2">
+            <label class="row"><span>Company</span><input id="customerName" /></label>
+            <label class="row"><span>Contact</span><input id="customerContact" /></label>
+          </div>
+          <div class="grid2">
+            <label class="row"><span>Address</span><input id="customerAddress" /></label>
+            <label class="row"><span>Phone</span><input id="customerPhone" /></label>
+          </div>
+          <div class="grid2">
+            <label class="row"><span>City</span><input id="customerCity" /></label>
+            <label class="row"><span>Country</span><input id="customerCountry" /></label>
+          </div>
+          <div class="rowBtns">
+            <button class="btn" type="button" id="btnCustomerSave">Save customer</button>
+            <button class="btn ghost" type="button" id="btnCustomerClear">Clear</button>
+          </div>
+          <div class="smallNote" id="customersMsg"></div>
+        </div>
       </div>
-      <div class="shipTableWrap">
-        <table class="shipTable">
-          <thead>
-            <tr>
-              <th>Date</th><th>Product</th><th>Qty</th><th>Destination</th><th>Recipient</th><th>Reference</th><th>Notes</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="shipHistBody"></tbody>
-        </table>
-      </div>
-      <div class="smallNote" id="shipHistCount"></div>
       <div class="dlgBtns">
-        <button class="btn ghost" type="button" id="btnShipHistClose">Close</button>
+        <button class="btn ghost" type="button" id="btnCustomersClose">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Shipments history -->
+  <dialog class="dlg" id="shipmentsDlg">
+    <form method="dialog" class="dlgBody wide" id="shipmentsForm">
+      <div class="dlgTitle">Shipment history</div>
+      <div class="row">
+        <span>Search</span>
+        <input id="shipmentsSearch" class="search" placeholder="Search customer / country / notes" />
+      </div>
+      <div id="shipmentsList" class="stackList"></div>
+      <div class="dlgBtns">
+        <button class="btn ghost" type="button" id="btnShipmentsClose">Close</button>
       </div>
     </form>
   </dialog>
@@ -327,22 +354,24 @@
           <button class="btn small ghost" data-act="info">More info…</button>
           <button class="btn small" data-act="stock">Stock…</button>
           <button class="btn small ghost" data-act="edit">Edit</button>
-          <button class="btn small ghost" data-act="ship">Ship…</button>
           <button class="btn small ghost danger" data-act="del">Delete</button>
+          <button class="btn small" data-act="cart">Add to cart</button>
         </div>
       </div>
     </div>
   </template>
 
   
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-  window.SUPABASE_URL = "https://ocsctsikfeklqqsuicls.supabase.co";
-  window.SUPABASE_ANON_KEY = "sb_publishable_FPoftaXY3jc_1A_HPVHFAA_9Bl6Kj1i";
+  window.SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL";
+  window.SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY";
+  window.ADMIN_USERNAME = "omaggi";
   window.ADMIN_EMAIL = "omaggi@campionature.local";
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="app.js" defer></script>
 </body>
 </html>
