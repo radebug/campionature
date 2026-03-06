@@ -67,50 +67,20 @@ stockUnknownExpiry: $("#stockUnknownExpiry"),
 };
 
 
-// Stock unit selector (Units vs CTs)
-stockUnitSelector.id = "stockUnitSelector";
-stockUnitSelector.innerHTML = `
-    <option value="units">Units</option>
-    <option value="ct">Cartons (CT)</option>
-`;
 
-
-
-/* -------------------- Supabase + Portal Auth (username/password) -------------------- */
+/* -------------------- Supabase Auth (simple admin login) -------------------- */
 const SUPABASE_URL = window.SUPABASE_URL;
 const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY;
-const SUPABASE_FN_NAME = window.SUPABASE_FN_NAME || "hyper-worker";
 const CATALOGUE_ROW_ID = "main";
+const ADMIN_USERNAME = window.ADMIN_USERNAME || "omaggi";
+const ADMIN_EMAIL = window.ADMIN_EMAIL || "";
 
 let supabaseClient = null;
+let adminSession = null;
 
-const PORTAL_SESSION_KEY = "portal_session_v1";
-let portalSession = null; // { token, role, username, exp }
-
-function loadPortalSession() {
-  try {
-    const raw = localStorage.getItem(PORTAL_SESSION_KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw);
-    if (!s?.token) return null;
-    if (s.exp && Date.now() > (s.exp * 1000)) {
-      localStorage.removeItem(PORTAL_SESSION_KEY);
-      return null;
-    }
-    return s;
-  } catch { return null; }
+function isAdmin() {
+  return !!adminSession;
 }
-function savePortalSession(s) {
-  portalSession = s;
-  localStorage.setItem(PORTAL_SESSION_KEY, JSON.stringify(s));
-  refreshAuthUI();
-}
-function clearPortalSession() {
-  portalSession = null;
-  localStorage.removeItem(PORTAL_SESSION_KEY);
-  refreshAuthUI();
-}
-function isAdmin() { return portalSession?.role === "admin"; }
 
 function refreshAuthUI() {
   const st = document.getElementById("authStatus");
@@ -119,8 +89,8 @@ function refreshAuthUI() {
   const u = document.getElementById("authUser");
   const p = document.getElementById("authPass");
 
-  if (portalSession?.token) {
-    if (st) st.textContent = `Logged as ${portalSession.username} (${portalSession.role})`;
+  if (adminSession) {
+    if (st) st.textContent = `Logged as ${ADMIN_USERNAME} (admin)`;
     if (btnLogin) btnLogin.style.display = "none";
     if (btnLogout) btnLogout.style.display = "";
     if (u) u.style.display = "none";
@@ -148,6 +118,13 @@ async function initSupabase() {
     return;
   }
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const { data } = await supabaseClient.auth.getSession();
+  adminSession = data?.session || null;
+  refreshAuthUI();
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
+    adminSession = session || null;
+    refreshAuthUI();
+  });
 }
 
 async function loadCatalogueOnline() {
@@ -178,22 +155,54 @@ async function portalLogin(username, password) {
     alert("Supabase not configured (URL/ANON key missing).");
     return;
   }
-  const { data, error } = await supabaseClient.functions.invoke(SUPABASE_FN_NAME, {
-    body: { action: "login", username, password }
+  const u = String(username || "").trim();
+  const p = String(password || "");
+  if (!u || !p) {
+    alert("Inserisci username e password.");
+    return;
+  }
+  if (u !== ADMIN_USERNAME) {
+    alert("Username non valido.");
+    return;
+  }
+  if (!ADMIN_EMAIL) {
+    alert("ADMIN_EMAIL non configurata in index.html.");
+    return;
+  }
+
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email: ADMIN_EMAIL,
+    password: p,
   });
-  if (error) { alert("Login failed: " + error.message); return; }
-  if (!data?.ok) { alert(data?.error || "Invalid credentials"); return; }
-  savePortalSession({ token: data.token, role: data.role, username: data.username, exp: data.exp });
+
+  if (error) {
+    alert("Login failed: " + error.message);
+    return;
+  }
+}
+
+async function portalLogout() {
+  if (!supabaseClient) return;
+  await supabaseClient.auth.signOut();
 }
 
 async function portalSaveCatalogue() {
-  if (!isAdmin()) { alert("Admin login required to save."); return; }
-  if (!supabaseClient) { alert("Supabase not configured yet."); return; }
-  const { data, error } = await supabaseClient.functions.invoke(SUPABASE_FN_NAME, {
-    body: { action: "save", token: portalSession.token, catalogue: state }
-  });
-  if (error) { alert("Save failed: " + error.message); return; }
-  if (!data?.ok) { alert(data?.error || "Save failed"); return; }
+  if (!isAdmin()) {
+    alert("Admin login required to save.");
+    return;
+  }
+  if (!supabaseClient) {
+    alert("Supabase not configured yet.");
+    return;
+  }
+  const { error } = await supabaseClient
+    .from("catalogue")
+    .upsert({ id: CATALOGUE_ROW_ID, data: state }, { onConflict: "id" });
+
+  if (error) {
+    alert("Save failed: " + error.message);
+    return;
+  }
   setDirty(false);
   alert("Saved online ✅");
 }
@@ -303,6 +312,33 @@ els.stockUnknownExpiry.addEventListener("change", () => {
     }
   });
 
+
+  // Admin auth
+  const btnLogin = document.getElementById("btnLogin");
+  const btnLogout = document.getElementById("btnLogout");
+  const authUser = document.getElementById("authUser");
+  const authPass = document.getElementById("authPass");
+
+  if (btnLogin) {
+    btnLogin.addEventListener("click", async () => {
+      await portalLogin(authUser?.value || "", authPass?.value || "");
+    });
+  }
+
+  if (btnLogout) {
+    btnLogout.addEventListener("click", async () => {
+      await portalLogout();
+    });
+  }
+
+  if (authPass) {
+    authPass.addEventListener("keydown", async (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        await portalLogin(authUser?.value || "", authPass?.value || "");
+      }
+    });
+  }
   // Search
   els.search.addEventListener("input", () => {
     ui.search = els.search.value.trim();
@@ -433,34 +469,6 @@ els.stockUnknownExpiry.addEventListener("change", () => {
       ? "Folder mode: OFF"
       : "Folder mode: Not supported (use Chrome/Edge)";
   }
-
-// --- Portal auth (admin login) ---
-const btnLogin = document.getElementById("btnLogin");
-const btnLogout = document.getElementById("btnLogout");
-const authUser = document.getElementById("authUser");
-const authPass = document.getElementById("authPass");
-
-if (btnLogin) {
-  btnLogin.addEventListener("click", async () => {
-    const username = (authUser?.value || "").trim();
-    const password = (authPass?.value || "").trim();
-    if (!username || !password) return alert("Inserisci username e password");
-    await portalLogin(username, password);
-  });
-}
-
-if (btnLogout) {
-  btnLogout.addEventListener("click", () => clearPortalSession());
-}
-
-if (authPass && btnLogin) {
-  authPass.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      btnLogin.click();
-    }
-  });
-}
 }
 
 /* Folder mode (Chrome/Edge) */
@@ -1916,38 +1924,25 @@ function createCtPill(count, type) {
   span.textContent = `${count} CT`;
   return span;
 }
-
 (async function bootstrap() {
   wire();
-
-  // Init Supabase client (online mode)
   await initSupabase();
-
-  // Expose for debugging (optional)
-  window.sb = supabaseClient;
-
-  // Restore session (if any) + update UI
-  portalSession = loadPortalSession();
   refreshAuthUI();
-
-  // Load catalogue from Supabase; if unavailable, fallback to local catalogue.json fetch
   const ok = await loadCatalogueOnline();
   if (!ok) {
     try {
       const res = await fetch("catalogue.json", { cache: "no-store" });
-      if (res.ok) {
-        const obj = await res.json();
-        validateAndNormalize(obj);
-        state = obj;
-        loadedFileName = "catalogue.json (fallback)";
-        setEnabled(true);
-        setDirty(false);
-        render();
-      } else {
-        console.warn("Fallback catalogue.json not found:", res.status);
-      }
-    } catch (e) {
-      console.warn("Fallback catalogue.json failed:", e);
+      if (!res.ok) throw new Error("catalogue.json not found");
+      const obj = await res.json();
+      validateAndNormalize(obj);
+      state = obj;
+      loadedFileName = "catalogue.json";
+      setEnabled(true);
+      setDirty(false);
+      render();
+    } catch (err) {
+      console.error(err);
+      alert("Impossibile caricare il catalogo da Supabase o da catalogue.json");
     }
   }
 })();
