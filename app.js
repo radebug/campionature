@@ -201,22 +201,29 @@ async function portalLogin(username, password) {
     alert("Supabase not configured (URL/ANON key missing).");
     return;
   }
-  const { data, error } = await supabaseClient.functions.invoke(SUPABASE_FN_NAME, {
-    body: { action: "login", username, password }
+  const adminEmail = window.ADMIN_EMAIL || `${username}@campionature.local`;
+  const { data, error } = await supabaseClient.auth.signInWithPassword({
+    email: adminEmail,
+    password
   });
   if (error) { alert("Login failed: " + error.message); return; }
-  if (!data?.ok) { alert(data?.error || "Invalid credentials"); return; }
-  savePortalSession({ token: data.token, role: data.role, username: data.username, exp: data.exp });
+  const session = data?.session;
+  if (!session?.access_token) { alert("Login failed"); return; }
+  savePortalSession({
+    token: session.access_token,
+    role: "admin",
+    username,
+    exp: Math.floor(new Date(session.expires_at || 0).getTime() / 1000) || Math.floor(Date.now()/1000)+3600
+  });
 }
 
 async function portalSaveCatalogue() {
   if (!isAdmin()) { alert("Admin login required to save."); return; }
   if (!supabaseClient) { alert("Supabase not configured yet."); return; }
-  const { data, error } = await supabaseClient.functions.invoke(SUPABASE_FN_NAME, {
-    body: { action: "save", token: portalSession.token, catalogue: state }
-  });
+  const { error } = await supabaseClient
+    .from("catalogue")
+    .upsert({ id: CATALOGUE_ROW_ID, data: state, updated_at: new Date().toISOString() }, { onConflict: "id" });
   if (error) { alert("Save failed: " + error.message); return; }
-  if (!data?.ok) { alert(data?.error || "Save failed"); return; }
   setDirty(false);
   alert("Saved online ✅");
 }
