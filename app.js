@@ -31,6 +31,8 @@ const els = {
   prodTitle: $("#prodTitle"),
   prodName: $("#prodName"),
   prodCtSize: $("#prodCtSize"),
+  prodCustomsCode: $("#prodCustomsCode"),
+  prodUnitWeightKg: $("#prodUnitWeightKg"),
   prodCategory: $("#prodCategory"),
   prodCategoriesBox: $("#prodCategoriesBox"),
   prodWordings: $("#prodWordings"),
@@ -86,6 +88,24 @@ stockUnknownExpiry: $("#stockUnknownExpiry"),
 
   cardTpl: $("#cardTpl"),
 };
+
+Object.assign(els, {
+  shipmentCartPanel: $("#shipmentCartPanel"),
+  shipmentCartList: $("#shipmentCartList"),
+  shipmentCartSummary: $("#shipmentCartSummary"),
+  btnClearCart: $("#btnClearCart"),
+  cartShipDate: $("#cartShipDate"),
+  cartDestination: $("#cartDestination"),
+  cartRecipient: $("#cartRecipient"),
+  cartReference: $("#cartReference"),
+  cartNotes: $("#cartNotes"),
+  cartExtraUE: $("#cartExtraUE"),
+  btnCreateShipment: $("#btnCreateShipment"),
+  btnCartPdf: $("#btnCartPdf"),
+  btnCartExcel: $("#btnCartExcel"),
+  btnCartDhl: $("#btnCartDhl"),
+});
+
 
 
 // Stock unit selector (Units vs CTs)
@@ -231,6 +251,8 @@ async function portalSaveCatalogue() {
 
 let state = null;
 let loadedFileName = "";
+
+let shipmentCart = [];
 
 let ui = {
   selectedCategoryId: "__all__",
@@ -417,6 +439,8 @@ els.stockUnknownExpiry.addEventListener("change", () => {
   if (!name) return;
 
   const ctSize = parseInt($("#prodCtSize").value) || null;
+  const customsCode = (els.prodCustomsCode?.value || "").trim();
+  const unitWeightKg = Number(els.prodUnitWeightKg?.value || 0) || null;
   const selectedCategoryIds = Array
     .from(els.prodCategoriesBox.querySelectorAll('input[type="checkbox"]:checked'))
     .map(cb => cb.value);
@@ -430,6 +454,8 @@ els.stockUnknownExpiry.addEventListener("change", () => {
     if (!p) return;
     p.name = name;
     p.ctSize = ctSize;
+    p.customsCode = customsCode;
+    p.unitWeightKg = unitWeightKg;
     p.categoryIds = selectedCategoryIds;
     delete p.categoryId;
     p.wordings = wordings;
@@ -442,6 +468,8 @@ els.stockUnknownExpiry.addEventListener("change", () => {
       id: uid("prod"),
       name,
       ctSize,
+      customsCode,
+      unitWeightKg,
       categoryIds: selectedCategoryIds,
       wordings,
       codes,
@@ -466,6 +494,17 @@ els.stockUnknownExpiry.addEventListener("change", () => {
   els.btnStockWithdraw.addEventListener("click", () => adjustStock(-1));
   els.btnStockOrder.addEventListener("click", () => createOrder());
   attachDMYMask(els.stockExpiry);
+
+  // Shipment cart
+  if (els.cartShipDate) {
+    els.cartShipDate.value = formatDateDMY(todayISO());
+    attachDMYMask(els.cartShipDate);
+  }
+  els.btnClearCart?.addEventListener("click", clearShipmentCart);
+  els.btnCreateShipment?.addEventListener("click", createShipmentFromCart);
+  els.btnCartPdf?.addEventListener("click", () => exportShipmentDraftPDF(buildShipmentDraftFromCart(false)));
+  els.btnCartExcel?.addEventListener("click", () => exportShipmentDraftExcel(buildShipmentDraftFromCart(false)));
+  els.btnCartDhl?.addEventListener("click", () => exportDHLList(buildShipmentDraftFromCart(false)));
 
   // Image picker controls
   els.btnPickImage.addEventListener("click", () => els.imgFilePicker.click());
@@ -643,18 +682,7 @@ function validateAndNormalize(obj) {
     if (!c.name) c.name = "Unnamed";
   }
 
-  for (const s of obj.shipments) {
-    if (!s.id) s.id = uid("ship");
-    s.productId = s.productId || "";
-    s.productName = s.productName || "";
-    s.date = s.date || todayISO();
-    s.qty = Math.max(1, Math.trunc(Number(s.qty) || 1));
-    s.destination = s.destination || "";
-    s.recipient = s.recipient || "";
-    s.reference = s.reference || "";
-    s.notes = s.notes || "";
-    s.createdAt = s.createdAt || new Date().toISOString();
-  }
+  obj.shipments = normalizeShipmentRecords(obj.shipments);
 
   for (const p of obj.products) {
     if (!p.id) p.id = uid("prod");
@@ -674,6 +702,8 @@ function validateAndNormalize(obj) {
     p.wordings = Array.isArray(p.wordings) ? p.wordings : [];
     p.codes    = Array.isArray(p.codes)    ? p.codes    : [];
     p.notes = p.notes || "";
+    p.customsCode = p.customsCode || inferCustomsCodeForProduct(p, obj.categories);
+    p.unitWeightKg = Number(p.unitWeightKg || 0) || "";
     p.imageFileName = p.imageFileName || "";
 
     // CT size normalization
@@ -688,6 +718,7 @@ function render() {
   renderCategories();
   renderFilterLine();
   renderProducts();
+  renderShipmentCart();
 }
 
 function renderCategories() {
@@ -1031,12 +1062,11 @@ if (showOrderedDot) {
 
   node.querySelector('[data-act="info"]').addEventListener("click", () => openInfoDlg(p.id));
   node.querySelector('[data-act="stock"]').addEventListener("click", () => openStockDlg(p.id));
-  node.querySelector('[data-act="ship"]').addEventListener("click", () => openShipDlg(p.id));
+  node.querySelector('[data-act="ship"]').addEventListener("click", () => addProductToShipmentCart(p.id));
   node.querySelector('[data-act="edit"]').addEventListener("click", () => openProductDlg(p.id));
   if (!isAdmin()) {
     node.querySelector('[data-act="edit"]').style.display = "none";
     node.querySelector('[data-act="del"]').style.display = "none";
-    node.querySelector('[data-act="ship"]').style.display = "none";
   }
   node.querySelector('[data-act="del"]').addEventListener("click", () => {
     if (!confirm(`Delete "${p.name}"?`)) return;
@@ -1126,6 +1156,8 @@ function openProductDlg(id) {
     els.prodTitle.textContent = "Edit product";
     els.prodName.value = p.name;
     $("#prodCtSize").value = p.ctSize || "";
+    if (els.prodCustomsCode) els.prodCustomsCode.value = p.customsCode || "";
+    if (els.prodUnitWeightKg) els.prodUnitWeightKg.value = p.unitWeightKg || "";
 
     // Back-compat: support older single categoryId
     const selectedIds = Array.isArray(p.categoryIds)
@@ -1147,6 +1179,8 @@ function openProductDlg(id) {
     els.prodTitle.textContent = "Add product";
     els.prodName.value = "";
     $("#prodCtSize").value = "";
+    if (els.prodCustomsCode) els.prodCustomsCode.value = "";
+    if (els.prodUnitWeightKg) els.prodUnitWeightKg.value = "";
 
     // optionally default-check current real category filter
     if (state.categories.some(c => c.id === ui.selectedCategoryId)) {
@@ -2168,6 +2202,525 @@ function createCtPill(count, type) {
   span.className = `ct-pill ${type === 'full' ? 'ct-pill-full' : 'ct-pill-partial'}`;
   span.textContent = `${count} CT`;
   return span;
+}
+
+
+
+function inferCustomsCodeForProduct(p, categories=[]) {
+  const names = [
+    p?.name || '',
+    ...(Array.isArray(p?.categoryIds) ? p.categoryIds.map(id => categories.find(c => c.id === id)?.name || '') : [])
+  ].join(' ').toLowerCase();
+
+  if (names.includes('wafer')) return '19053219';
+  if (names.includes('biscotti') || names.includes('biscuit')) return '19053119';
+  if (names.includes('savoiardi')) return '19059080';
+  if (names.includes('patatine')) return '20052020';
+  if (names.includes('crostatine')) return '19059070';
+  return '19059070';
+}
+
+function getLotKey(expiry) {
+  return String(expiry || "__unknown__");
+}
+
+function normalizeShipmentRecords(rows) {
+  const arr = Array.isArray(rows) ? rows : [];
+  return arr.map(s => {
+    const items = Array.isArray(s.items) && s.items.length
+      ? s.items.map(it => ({
+          productId: it.productId || s.productId || "",
+          productName: it.productName || s.productName || "",
+          lotExpiry: it.lotExpiry || "__unknown__",
+          unitMode: it.unitMode === "ct" ? "ct" : "units",
+          qty: Math.max(1, Math.trunc(Number(it.qty) || Number(s.qty) || 1)),
+          unitsQty: Math.max(1, Math.trunc(Number(it.unitsQty) || Number(it.qty) || Number(s.qty) || 1))
+        }))
+      : [{
+          productId: s.productId || "",
+          productName: s.productName || "",
+          lotExpiry: s.lotExpiry || "__unknown__",
+          unitMode: s.unitMode === "ct" ? "ct" : "units",
+          qty: Math.max(1, Math.trunc(Number(s.qty) || 1)),
+          unitsQty: Math.max(1, Math.trunc(Number(s.unitsQty) || Number(s.qty) || 1))
+        }];
+
+    return {
+      id: s.id || uid("ship"),
+      date: s.date || todayISO(),
+      destination: s.destination || "",
+      recipient: s.recipient || "",
+      reference: s.reference || "",
+      notes: s.notes || "",
+      extraUE: !!s.extraUE,
+      createdAt: s.createdAt || new Date().toISOString(),
+      items
+    };
+  });
+}
+
+function shipmentItemAvailableUnits(item) {
+  const p = state.products.find(x => x.id === item.productId);
+  if (!p) return 0;
+  const lot = normalizeLots((p.lots || []).filter(l => !l.ordered)).find(l => getLotKey(l.expiry) === getLotKey(item.lotExpiry));
+  return Math.max(0, Math.trunc(Number(lot?.qty) || 0));
+}
+
+function shipmentItemAvailableDisplay(item) {
+  const p = state.products.find(x => x.id === item.productId);
+  const units = shipmentItemAvailableUnits(item);
+  if (!p) return `${units} units`;
+  if (item.unitMode === "ct" && p.ctSize > 0) {
+    return `${Math.floor(units / p.ctSize)} CT (${units} units)`;
+  }
+  return `${units} units`;
+}
+
+function cartItemRequestedUnits(item) {
+  const p = state.products.find(x => x.id === item.productId);
+  const qty = Math.max(1, Math.trunc(Number(item.qty) || 1));
+  if (item.unitMode === "ct") {
+    if (!p?.ctSize) return 0;
+    return qty * p.ctSize;
+  }
+  return qty;
+}
+
+function sortedLotsForCart(p) {
+  return sortedRealLotsForShipping(p).filter(l => l.qty > 0);
+}
+
+function firstAvailableLotForProduct(p) {
+  const lots = sortedLotsForCart(p);
+  return lots.length ? lots[0] : null;
+}
+
+function addProductToShipmentCart(productId) {
+  const p = state.products.find(x => x.id === productId);
+  if (!p) return;
+  const firstLot = firstAvailableLotForProduct(p);
+  if (!firstLot) {
+    alert("No available stock lots for this product.");
+    return;
+  }
+
+  const existing = shipmentCart.find(it => it.productId === productId && getLotKey(it.lotExpiry) === getLotKey(firstLot.expiry) && it.unitMode === "units");
+  if (existing) {
+    existing.qty += 1;
+  } else {
+    shipmentCart.push({
+      id: uid("cart"),
+      productId: p.id,
+      productName: p.name,
+      lotExpiry: firstLot.expiry,
+      unitMode: "units",
+      qty: 1
+    });
+  }
+  renderShipmentCart();
+}
+
+function clearShipmentCart() {
+  shipmentCart = [];
+  renderShipmentCart();
+}
+
+function buildLotOptionsHtml(p, selectedExpiry) {
+  const lots = sortedLotsForCart(p);
+  return lots.map(l => {
+    const label = `${formatDateDMY(l.expiry)} — ${l.qty} units${p.ctSize ? ` (${Math.floor(l.qty / p.ctSize)} CT max)` : ''}`;
+    const sel = getLotKey(l.expiry) === getLotKey(selectedExpiry) ? 'selected' : '';
+    return `<option value="${escapeHtml(getLotKey(l.expiry))}" ${sel}>${escapeHtml(label)}</option>`;
+  }).join('');
+}
+
+function renderShipmentCart() {
+  if (!els.shipmentCartList) return;
+  const box = els.shipmentCartList;
+  box.innerHTML = "";
+
+  if (!shipmentCart.length) {
+    box.innerHTML = `<div class="shipmentCartEmpty">Cart empty. Use “Add to cart” on a product.</div>`;
+    if (els.shipmentCartSummary) els.shipmentCartSummary.textContent = "No products in cart.";
+    return;
+  }
+
+  let totalUnits = 0;
+
+  for (const item of shipmentCart) {
+    const p = state.products.find(x => x.id === item.productId);
+    if (!p) continue;
+    const row = document.createElement("div");
+    row.className = "shipmentCartItem";
+
+    const unitOptions = [`<option value="units" ${item.unitMode !== "ct" ? 'selected' : ''}>Units</option>`];
+    if (p.ctSize && p.ctSize > 0) unitOptions.push(`<option value="ct" ${item.unitMode === "ct" ? 'selected' : ''}>Boxes / CT</option>`);
+
+    row.innerHTML = `
+      <div class="shipmentCartItemHead">
+        <div class="shipmentCartItemName">${escapeHtml(item.productName)}</div>
+        <button class="btn small ghost danger" type="button" data-cart-act="remove">Remove</button>
+      </div>
+      <div class="shipmentCartGrid">
+        <label class="row">
+          <span>Lot</span>
+          <select data-cart-act="lot">${buildLotOptionsHtml(p, item.lotExpiry)}</select>
+        </label>
+        <label class="row">
+          <span>Mode</span>
+          <select data-cart-act="mode">${unitOptions.join('')}</select>
+        </label>
+        <label class="row">
+          <span>Quantity</span>
+          <input data-cart-act="qty" type="number" min="1" step="1" value="${Math.max(1, Math.trunc(Number(item.qty)||1))}">
+        </label>
+        <div class="cartMiniBtns">
+          <button class="btn small ghost" type="button" data-cart-act="minus">-</button>
+          <button class="btn small" type="button" data-cart-act="plus">+</button>
+        </div>
+      </div>
+      <div class="shipmentCartMeta" data-cart-meta></div>
+    `;
+
+    const lotSel = row.querySelector('[data-cart-act="lot"]');
+    const modeSel = row.querySelector('[data-cart-act="mode"]');
+    const qtyInp = row.querySelector('[data-cart-act="qty"]');
+    const meta = row.querySelector('[data-cart-meta]');
+
+    function syncMeta() {
+      const availableUnits = shipmentItemAvailableUnits(item);
+      const requestedUnits = cartItemRequestedUnits(item);
+      const status = requestedUnits > availableUnits ? 'Not enough stock in selected lot.' : 'OK';
+      let extra = `Available in selected lot: ${shipmentItemAvailableDisplay(item)} • Requested: ${requestedUnits} units`;
+      if (p.ctSize) extra += ` • CT size: ${p.ctSize}`;
+      meta.textContent = `${extra} • ${status}`;
+    }
+
+    lotSel.addEventListener("change", () => {
+      item.lotExpiry = lotSel.value;
+      if (item.unitMode === "ct" && p.ctSize > 0) {
+        const maxCt = Math.max(1, Math.floor(shipmentItemAvailableUnits(item) / p.ctSize) || 1);
+        if ((Number(item.qty) || 1) > maxCt) item.qty = maxCt;
+      }
+      renderShipmentCart();
+    });
+    modeSel.addEventListener("change", () => {
+      item.unitMode = modeSel.value === "ct" ? "ct" : "units";
+      if (item.unitMode === "ct" && p.ctSize > 0) {
+        const maxCt = Math.max(1, Math.floor(shipmentItemAvailableUnits(item) / p.ctSize) || 1);
+        item.qty = Math.min(Math.max(1, Math.trunc(Number(item.qty) || 1)), maxCt);
+      }
+      renderShipmentCart();
+    });
+    qtyInp.addEventListener("input", () => {
+      item.qty = Math.max(1, Math.trunc(Number(qtyInp.value) || 1));
+      syncMeta();
+    });
+    row.querySelector('[data-cart-act="plus"]').addEventListener("click", () => {
+      item.qty = Math.max(1, Math.trunc(Number(item.qty) || 1)) + 1;
+      renderShipmentCart();
+    });
+    row.querySelector('[data-cart-act="minus"]').addEventListener("click", () => {
+      item.qty = Math.max(1, Math.trunc(Number(item.qty) || 1) - 1);
+      renderShipmentCart();
+    });
+    row.querySelector('[data-cart-act="remove"]').addEventListener("click", () => {
+      shipmentCart = shipmentCart.filter(x => x.id !== item.id);
+      renderShipmentCart();
+    });
+
+    syncMeta();
+    totalUnits += cartItemRequestedUnits(item);
+    box.appendChild(row);
+  }
+
+  if (els.shipmentCartSummary) {
+    els.shipmentCartSummary.textContent = `${shipmentCart.length} product line${shipmentCart.length === 1 ? '' : 's'} • ${totalUnits} total units`;
+  }
+}
+
+function buildShipmentDraftFromCart(requireValidation=true) {
+  const dateISO = parseDMYToISO(els.cartShipDate?.value || '') || todayISO();
+  const destination = (els.cartDestination?.value || '').trim();
+  const recipient = (els.cartRecipient?.value || '').trim();
+  const reference = (els.cartReference?.value || '').trim();
+  const notes = (els.cartNotes?.value || '').trim();
+  const extraUE = !!els.cartExtraUE?.checked;
+
+  const items = [];
+  const errors = [];
+
+  for (const item of shipmentCart) {
+    const p = state.products.find(x => x.id === item.productId);
+    if (!p) continue;
+    const lot = normalizeLots((p.lots || []).filter(l => !l.ordered)).find(l => getLotKey(l.expiry) === getLotKey(item.lotExpiry));
+    const availableUnits = Math.max(0, Math.trunc(Number(lot?.qty) || 0));
+    const requestedUnits = cartItemRequestedUnits(item);
+    if (requireValidation) {
+      if (!lot) errors.push(`${p.name}: selected lot not found.`);
+      else if (requestedUnits > availableUnits) errors.push(`${p.name}: requested ${requestedUnits}, available ${availableUnits} in lot ${formatDateDMY(item.lotExpiry)}.`);
+      if (item.unitMode === "ct" && (!p.ctSize || p.ctSize <= 0)) errors.push(`${p.name}: CT size missing.`);
+    }
+    items.push({
+      productId: p.id,
+      productName: p.name,
+      lotExpiry: item.lotExpiry,
+      unitMode: item.unitMode === "ct" ? "ct" : "units",
+      qty: Math.max(1, Math.trunc(Number(item.qty) || 1)),
+      unitsQty: requestedUnits,
+      customsCode: p.customsCode || "",
+      unitWeightKg: Number(p.unitWeightKg || 0) || 0
+    });
+  }
+
+  return {
+    id: uid("ship"),
+    date: dateISO,
+    destination,
+    recipient,
+    reference,
+    notes,
+    extraUE,
+    createdAt: new Date().toISOString(),
+    items,
+    errors
+  };
+}
+
+function withdrawFromSpecificLot(p, expiry, qtyNeeded) {
+  let remaining = Math.max(0, Math.trunc(Number(qtyNeeded) || 0));
+  if (!remaining) return true;
+  const lot = (p.lots || []).find(l => !l.ordered && getLotKey(l.expiry) === getLotKey(expiry));
+  if (!lot || lot.qty < remaining) return false;
+  lot.qty -= remaining;
+  p.lots = normalizeLots((p.lots || []).filter(l => l.qty > 0 || l.ordered));
+  return true;
+}
+
+function createShipmentFromCart() {
+  if (!isAdmin()) { alert("Admin login required."); return; }
+  if (!shipmentCart.length) { alert("Cart is empty."); return; }
+  const draft = buildShipmentDraftFromCart(true);
+  if (draft.errors.length) {
+    alert(draft.errors.join("\n"));
+    return;
+  }
+
+  for (const item of draft.items) {
+    const p = state.products.find(x => x.id === item.productId);
+    if (!p) continue;
+    const ok = withdrawFromSpecificLot(p, item.lotExpiry, item.unitsQty);
+    if (!ok) {
+      alert(`Could not withdraw stock for ${item.productName}.`);
+      return;
+    }
+  }
+
+  state.shipments.unshift({
+    id: draft.id,
+    date: draft.date,
+    destination: draft.destination,
+    recipient: draft.recipient,
+    reference: draft.reference,
+    notes: draft.notes,
+    extraUE: draft.extraUE,
+    createdAt: draft.createdAt,
+    items: draft.items
+  });
+
+  setDirty(true);
+  exportShipmentDraftPDF(draft);
+  exportShipmentDraftExcel(draft);
+  if (draft.extraUE) exportDHLList(draft);
+  shipmentCart = [];
+  render();
+  renderShipmentHistory();
+}
+
+function shipmentItemsText(s) {
+  const items = Array.isArray(s.items) ? s.items : [];
+  return items.map(it => {
+    const lotTxt = formatDateDMY(it.lotExpiry || "__unknown__");
+    const modeTxt = it.unitMode === "ct" ? `${it.qty} CT` : `${it.qty} u`;
+    return `${it.productName} • ${modeTxt} • Lot ${lotTxt}`;
+  }).join(" | ");
+}
+
+function filteredShipments() {
+  const q = (els.shipHistSearch?.value || '').trim().toLowerCase();
+  const arr = normalizeShipmentRecords(state?.shipments);
+  arr.sort((a,b) => `${b.date}|${b.createdAt || ''}`.localeCompare(`${a.date}|${a.createdAt || ''}`));
+  if (!q) return arr;
+  return arr.filter(s => [shipmentItemsText(s), s.destination, s.recipient, s.reference, s.notes, s.extraUE ? 'dhl extra ue' : ''].join(' ').toLowerCase().includes(q));
+}
+
+function renderShipmentHistory() {
+  if (!els.shipHistBody) return;
+  state.shipments = normalizeShipmentRecords(state.shipments);
+  const rows = filteredShipments();
+  els.shipHistBody.innerHTML = '';
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="8" class="shipEmpty">No shipments registered yet.</td>';
+    els.shipHistBody.appendChild(tr);
+  } else {
+    for (const s of rows) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${formatDateDMY(s.date)}</td>
+        <td>${escapeHtml(shipmentItemsText(s))}</td>
+        <td>${escapeHtml(s.destination || '')}</td>
+        <td>${escapeHtml(s.recipient || '')}</td>
+        <td>${escapeHtml(s.reference || '')}</td>
+        <td>${escapeHtml(s.notes || '')}</td>
+        <td>${s.extraUE ? 'Yes' : 'No'}</td>
+        <td class="shipDel">${isAdmin() ? '<button class="btn small ghost danger" type="button">Del</button>' : ''}</td>`;
+      const btn = tr.querySelector('button');
+      if (btn) btn.addEventListener('click', () => deleteShipment(s.id));
+      els.shipHistBody.appendChild(tr);
+    }
+  }
+  if (els.shipHistCount) els.shipHistCount.textContent = `${rows.length} shipment${rows.length === 1 ? '' : 's'}`;
+}
+
+function deleteShipment(id) {
+  if (!isAdmin()) return;
+  if (!confirm('Delete this shipment record?')) return;
+  state.shipments = normalizeShipmentRecords(state.shipments).filter(x => x.id !== id);
+  setDirty(true);
+  renderShipmentHistory();
+}
+
+function exportCatalogueExcel() {
+  if (!state) return;
+  if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
+  const wb = XLSX.utils.book_new();
+  const products = (state.products || []).slice().sort((a,b) => a.name.localeCompare(b.name)).map(p => ({
+    Product: p.name,
+    Categories: (p.categoryIds || []).map(id => state.categories.find(c => c.id === id)?.name).filter(Boolean).join(', '),
+    Stock: totalStock(p),
+    AvailableStock: availableStock(p),
+    CTSize: p.ctSize || '',
+    CustomsCode: p.customsCode || '',
+    UnitWeightKg: p.unitWeightKg || '',
+    Image: p.imageFileName || '',
+    Wordings: (p.wordings || []).join(' | '),
+    Codes: (p.codes || []).join(' | '),
+    Notes: p.notes || ''
+  }));
+  const lots = [];
+  for (const p of (state.products || [])) {
+    for (const l of normalizeLots(p.lots || [])) {
+      lots.push({
+        Product: p.name,
+        Expiry: l.expiry === '__unknown__' ? 'Unknown' : l.expiry,
+        Qty: l.qty,
+        Ordered: l.ordered ? 'Yes' : 'No',
+        Status: l.ordered ? 'Ordered' : lotStatus(l.expiry)
+      });
+    }
+  }
+  const shipments = [];
+  for (const s of normalizeShipmentRecords(state.shipments)) {
+    for (const it of s.items) {
+      shipments.push({
+        Date: s.date,
+        ShipmentID: s.id,
+        Product: it.productName,
+        Lot: it.lotExpiry === '__unknown__' ? 'Unknown' : it.lotExpiry,
+        Mode: it.unitMode,
+        Qty: it.qty,
+        UnitsQty: it.unitsQty,
+        Destination: s.destination,
+        Recipient: s.recipient,
+        Reference: s.reference,
+        Notes: s.notes,
+        ExtraUE: s.extraUE ? 'Yes' : 'No'
+      });
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(products.length ? products : [{Info:'No products'}]), 'Products');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lots.length ? lots : [{Info:'No lots'}]), 'Lots');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shipments.length ? shipments : [{Info:'No shipments'}]), 'Shipments');
+  XLSX.writeFile(wb, `campionature_${todayISO()}.xlsx`);
+}
+
+function exportShipmentDraftExcel(draft) {
+  if (!draft || !draft.items?.length) { alert("Cart is empty."); return; }
+  if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
+  const wb = XLSX.utils.book_new();
+  const rows = draft.items.map(it => ({
+    ShipmentID: draft.id,
+    Date: draft.date,
+    Product: it.productName,
+    Lot: it.lotExpiry === '__unknown__' ? 'Unknown' : it.lotExpiry,
+    Mode: it.unitMode,
+    Qty: it.qty,
+    UnitsQty: it.unitsQty,
+    Destination: draft.destination,
+    Recipient: draft.recipient,
+    Reference: draft.reference,
+    Notes: draft.notes,
+    ExtraUE: draft.extraUE ? 'Yes' : 'No'
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Shipment');
+  XLSX.writeFile(wb, `${draft.id}.xlsx`);
+}
+
+function exportShipmentDraftPDF(draft) {
+  if (!draft || !draft.items?.length) { alert("Cart is empty."); return; }
+  const jspdfNs = window.jspdf;
+  if (!jspdfNs?.jsPDF) { alert("PDF library not loaded."); return; }
+  const doc = new jspdfNs.jsPDF();
+  let y = 16;
+  doc.setFontSize(16);
+  doc.text(`Shipment ${draft.id}`, 14, y); y += 8;
+  doc.setFontSize(11);
+  const head = [
+    `Date: ${draft.date}`,
+    `Destination: ${draft.destination || '-'}`,
+    `Recipient: ${draft.recipient || '-'}`,
+    `Reference: ${draft.reference || '-'}`,
+    `Notes: ${draft.notes || '-'}`,
+    `Extra UE / DHL: ${draft.extraUE ? 'Yes' : 'No'}`
+  ];
+  head.forEach(line => { doc.text(line, 14, y); y += 6; });
+  y += 2;
+  draft.items.forEach((it, i) => {
+    const lines = [
+      `${i+1}. ${it.productName}`,
+      `   Lot: ${it.lotExpiry === '__unknown__' ? 'Unknown' : it.lotExpiry}`,
+      `   Mode: ${it.unitMode}   Qty: ${it.qty}   Units: ${it.unitsQty}`
+    ];
+    lines.forEach(line => {
+      if (y > 280) { doc.addPage(); y = 16; }
+      doc.text(line, 14, y); y += 6;
+    });
+    y += 2;
+  });
+  doc.save(`${draft.id}.pdf`);
+}
+
+function exportDHLList(draft) {
+  if (!draft || !draft.items?.length) { alert("Cart is empty."); return; }
+  const blocks = draft.items.map(it => {
+    const baseName = String(it.productName || '').split(' ');
+    const brand = 'BALCONI';
+    const line1 = it.customsCode || 'missing';
+    const line2 = `${brand} [${it.productName}]`;
+    const line3 = `[${it.unitWeightKg || 'missing'}]`;
+    return [line1, line2, line3].join('\n');
+  });
+  const text = blocks.join('\n\n');
+  const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${draft.id}_DHL_List.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 (async function bootstrap(){

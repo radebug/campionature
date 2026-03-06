@@ -61,6 +61,60 @@
 
     <section class="content">
       <div id="filterLine" class="filterLine"></div>
+
+      <section class="shipmentCartPanel" id="shipmentCartPanel">
+        <div class="shipmentCartHead">
+          <div>
+            <div class="shipmentCartTitle">Shipment cart</div>
+            <div class="smallNote" id="shipmentCartSummary">No products in cart.</div>
+          </div>
+          <div class="shipmentCartActionsTop">
+            <button class="btn ghost" type="button" id="btnClearCart">Clear cart</button>
+          </div>
+        </div>
+
+        <div id="shipmentCartList" class="shipmentCartList"></div>
+
+        <div class="shipmentCartForm">
+          <div class="grid2">
+            <label class="row">
+              <span>Date</span>
+              <input type="text" id="cartShipDate" placeholder="DD/MM/YYYY" inputmode="numeric">
+            </label>
+            <label class="row cartCheckRow">
+              <span>Options</span>
+              <label class="checkItem"><input type="checkbox" id="cartExtraUE"> Extra UE / DHL List</label>
+            </label>
+          </div>
+          <div class="grid2">
+            <label class="row">
+              <span>Destination</span>
+              <input id="cartDestination" type="text" />
+            </label>
+            <label class="row">
+              <span>Recipient</span>
+              <input id="cartRecipient" type="text" />
+            </label>
+          </div>
+          <div class="grid2">
+            <label class="row">
+              <span>Reference</span>
+              <input id="cartReference" type="text" />
+            </label>
+            <label class="row">
+              <span>Notes</span>
+              <input id="cartNotes" type="text" />
+            </label>
+          </div>
+          <div class="rowBtns">
+            <button class="btn" type="button" id="btnCreateShipment">Create shipment</button>
+            <button class="btn ghost" type="button" id="btnCartPdf">PDF</button>
+            <button class="btn ghost" type="button" id="btnCartExcel">Excel</button>
+            <button class="btn ghost" type="button" id="btnCartDhl">DHL List</button>
+          </div>
+        </div>
+      </section>
+
       <div id="productGrid" class="productGrid"></div>
       <div id="empty" class="empty" hidden>No products found.</div>
     </section>
@@ -134,6 +188,16 @@
           <label class="row">
             <span>CT Size (Packs per Carton)</span>
             <input id="prodCtSize" type="number" min="1" step="1" placeholder="e.g. 12" />
+          </label>
+
+          <label class="row">
+            <span>Customs code</span>
+            <input id="prodCustomsCode" type="text" placeholder="e.g. 19059070" />
+          </label>
+
+          <label class="row">
+            <span>Unit weight (kg)</span>
+            <input id="prodUnitWeightKg" type="number" min="0" step="0.001" placeholder="e.g. 0.25" />
           </label>
 
           <input id="imgFilePicker" type="file" accept="image/*" hidden />
@@ -292,7 +356,7 @@
         <table class="shipTable">
           <thead>
             <tr>
-              <th>Date</th><th>Product</th><th>Qty</th><th>Destination</th><th>Recipient</th><th>Reference</th><th>Notes</th><th></th>
+              <th>Date</th><th>Items</th><th>Destination</th><th>Recipient</th><th>Reference</th><th>Notes</th><th>DHL</th><th></th>
             </tr>
           </thead>
           <tbody id="shipHistBody"></tbody>
@@ -327,7 +391,7 @@
           <button class="btn small ghost" data-act="info">More info…</button>
           <button class="btn small" data-act="stock">Stock…</button>
           <button class="btn small ghost" data-act="edit">Edit</button>
-          <button class="btn small ghost" data-act="ship">Ship…</button>
+          <button class="btn small ghost" data-act="ship">Add to cart</button>
           <button class="btn small ghost danger" data-act="del">Delete</button>
         </div>
       </div>
@@ -343,6 +407,7 @@
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="app.js" defer></script>
 </body>
 </html>

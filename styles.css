@@ -475,3 +475,57 @@ textarea{resize:vertical}
   .dlgBody,.dlgBody.wide,.shipHistBody{width:calc(100vw - 16px);padding:10px}
   .shipHistTools .btn,.shipHistTools .search{width:100%}
 }
+
+
+.shipmentCartPanel{
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  background:#fbfcff;
+  padding:12px;
+  margin-bottom:12px;
+}
+.shipmentCartHead{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:10px;
+  margin-bottom:10px;
+}
+.shipmentCartTitle{font-weight:800}
+.shipmentCartList{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+.shipmentCartItem{
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  background:#fff;
+  padding:10px;
+}
+.shipmentCartItemHead{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:center;
+  margin-bottom:8px;
+}
+.shipmentCartItemName{font-weight:700}
+.shipmentCartGrid{
+  display:grid;
+  grid-template-columns:2fr 1fr 1fr auto;
+  gap:8px;
+  align-items:end;
+}
+.shipmentCartMeta{font-size:12px;color:var(--muted);margin-top:6px}
+.shipmentCartEmpty{
+  border:1px dashed var(--line);
+  border-radius:var(--r);
+  padding:12px;
+  text-align:center;
+  color:var(--muted);
+  background:#fff;
+}
+.cartMiniBtns{display:flex;gap:6px;align-items:center}
+.cartQtyWrap{display:flex;gap:6px;align-items:center}
+.cartQtyWrap input{max-width:90px}
+.cartCheckRow{justify-content:flex-end}
+@media (max-width: 900px){
+  .shipmentCartGrid{grid-template-columns:1fr 1fr}
+}
