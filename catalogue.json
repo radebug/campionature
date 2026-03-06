@@ -97,7 +97,7 @@
       "lots": [
         {
           "expiry": "2026-08-28",
-          "qty": 19,
+          "qty": 9,
           "ordered": false
         }
       ],
@@ -110,9 +110,12 @@
       "id": "prod_59a210704a745_19c8c53321d",
       "name": "Mix Max Dark Chocolate",
       "wordings": [
-        "Mix Max Cioccolato Fondente"
+        "Mix Max Cioccolato Fondente",
+        "MIX MAX DARK CHOCOLATE 15x320g"
       ],
-      "codes": [],
+      "codes": [
+        "652130999990"
+      ],
       "notes": "",
       "imageFileName": "MixMax_Dark.webp",
       "lots": [
@@ -130,14 +133,18 @@
     {
       "id": "prod_aa55ac1007467_19c8c53800c",
       "name": "Mix Max Orange",
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "MIX MAX ORANGE IT BALCONI 24D"
+      ],
+      "codes": [
+        "652180199990"
+      ],
       "notes": "",
       "imageFileName": "MixMax_Orange.webp",
       "lots": [
         {
           "expiry": "2026-08-28",
-          "qty": 10,
+          "qty": 13,
           "ordered": false
         }
       ],
@@ -200,8 +207,12 @@
     {
       "id": "prod_438d845dbaba_19c8c54e459",
       "name": "Rollino Pistacchio",
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "ROLLINO PISTACCHIO BALCONI 72"
+      ],
+      "codes": [
+        "679106999990"
+      ],
       "notes": "",
       "imageFileName": "RollinoPistacchio.webp",
       "lots": [
@@ -221,10 +232,11 @@
       "name": "Rollino Nocciola",
       "wordings": [
         "ROLLINO NOCCIOLA 20X6 BALCONI",
-        "ROLLINO NOCCIOLA 20X6 BALCONI"
+        "ROLLINO NOCCIOLA IT BALCONI 36D"
       ],
       "codes": [
-        "670106999990"
+        "670106999990",
+        "670106199990"
       ],
       "notes": "",
       "imageFileName": "RollinoNocciola.webp",
@@ -243,14 +255,23 @@
     {
       "id": "prod_3c3826c2b83c4_19c8c565523",
       "name": "Rollino Latte",
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "ROLLINO LATTE 20X6 BALCONI"
+      ],
+      "codes": [
+        "672106999990"
+      ],
       "notes": "",
       "imageFileName": "RollinoLatte.webp",
       "lots": [
         {
           "expiry": "2026-08-28",
           "qty": 24,
+          "ordered": false
+        },
+        {
+          "expiry": "2026-07-28",
+          "qty": 17,
           "ordered": false
         }
       ],
@@ -262,8 +283,14 @@
     {
       "id": "prod_95379d6fcc718_19c8c568640",
       "name": "Rollino Cacao",
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "ROLLINO CACAO 20X6 BALCONI",
+        "ROLLINO CACAO IT BALCONI 36D\tIT"
+      ],
+      "codes": [
+        "673106999990",
+        "673106199990"
+      ],
       "notes": "",
       "imageFileName": "RollinoCacao.webp",
       "lots": [
@@ -286,8 +313,12 @@
     {
       "id": "prod_5fa9e376936b8_19c8c579085",
       "name": "Trancetto Albicocca",
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "TRANCETTO ALBICOCCA BALCONI EXP"
+      ],
+      "codes": [
+        "601145999990"
+      ],
       "notes": "",
       "imageFileName": "Trancetto_Albicocca.webp",
       "lots": [
@@ -340,7 +371,7 @@
       "lots": [
         {
           "expiry": "2026-08-28",
-          "qty": 16,
+          "qty": 6,
           "ordered": false
         }
       ],
@@ -379,9 +410,12 @@
       "name": "Mini Rolls Fragola",
       "wordings": [
         "Minirolls Fragola",
-        "Miniroll Fragola"
+        "Miniroll Fragola",
+        "MINIROLLS FRAGOLA 20X6 BALCONI 36D"
       ],
-      "codes": [],
+      "codes": [
+        "683106999990"
+      ],
       "notes": "",
       "imageFileName": "Minirolls_Fragola.webp",
       "lots": [
@@ -450,14 +484,18 @@
     {
       "id": "prod_ee2527465ac4f_19c8c61a9c2",
       "name": "Snack Latte",
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "SNACK AL LATTE IT RSPO MB BALCONI 24D"
+      ],
+      "codes": [
+        "640150199990"
+      ],
       "notes": "",
       "imageFileName": "Snack-Latte.webp",
       "lots": [
         {
           "expiry": "2026-08-28",
-          "qty": 6,
+          "qty": 11,
           "ordered": false
         }
       ],
@@ -546,7 +584,7 @@
       "lots": [
         {
           "expiry": "2026-08-28",
-          "qty": 12,
+          "qty": 2,
           "ordered": false
         }
       ],
@@ -557,11 +595,14 @@
     },
     {
       "id": "prod_364c52c9b6707_19c8c6a3b62",
-      "name": "Duo Croissant Pesca e Albicocca",
+      "name": "Pesca e Albicocca",
       "wordings": [
-        "DUO CROISSANT doppia sfoglia pesca e albicocca"
+        "Duo Croissant doppia sfoglia pesca e albicocca",
+        "ROLLINO PISTACCHIO BALCONI 72"
       ],
-      "codes": [],
+      "codes": [
+        "120404999990"
+      ],
       "notes": "",
       "imageFileName": "Croissant_PescaAlbicocca.webp",
       "lots": [
@@ -604,9 +645,12 @@
       "id": "prod_15cee09f13722_19c8c6bf34d",
       "name": "Duo Croissant Pistacchio",
       "wordings": [
-        "DUO CROISSANT doppia sfoglia con crema al pistacchio"
+        "Duo Croissant doppia sfoglia con crema al pistacchio",
+        "BALCONI CROISSANT DUO PESCA-ALBIC.6x50GR"
       ],
-      "codes": [],
+      "codes": [
+        "120420999990"
+      ],
       "notes": "",
       "imageFileName": "Croissant_Pistacchio.webp",
       "lots": [
@@ -628,8 +672,12 @@
         "cat_6fd6465205953_19c8c933f70",
         "cat_65f15b1a91e82_19c8c664232"
       ],
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "820203999990"
+      ],
+      "codes": [
+        "Muffin Altograno Gocce Cioccolato 6*42gr"
+      ],
       "notes": "",
       "imageFileName": "Croissant_AltoGrano_Classico.webp",
       "lots": [],
@@ -642,8 +690,12 @@
         "cat_6fd6465205953_19c8c933f70",
         "cat_65f15b1a91e82_19c8c664232"
       ],
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "Croissant Duo Altograno Manuka 6x50g"
+      ],
+      "codes": [
+        "120414999990"
+      ],
       "notes": "",
       "imageFileName": "Croissant_AltoGrano_Manuka.webp",
       "lots": [
@@ -747,10 +799,12 @@
       ],
       "wordings": [
         "Torta Tiramisù 400g",
-        "TORTA TIRAMISU' IT BALCONI 48D"
+        "TORTA TIRAMISU' IT BALCONI 48D",
+        "TORTA TIRAMISU' 400g BALCONI EXP1"
       ],
       "codes": [
-        "441400199990"
+        "441400199990",
+        "441400999995"
       ],
       "notes": "",
       "imageFileName": "Tiramisu_Torta_400g.webp",
@@ -776,7 +830,7 @@
       "lots": [
         {
           "expiry": "2026-08-28",
-          "qty": 7,
+          "qty": 19,
           "ordered": false
         }
       ],
@@ -794,13 +848,7 @@
       "codes": [],
       "notes": "",
       "imageFileName": "RollMax_Cappuccino.webp",
-      "lots": [
-        {
-          "expiry": "2026-06-28",
-          "qty": 8,
-          "ordered": false
-        }
-      ],
+      "lots": [],
       "ctSize": 12
     },
     {
@@ -815,8 +863,8 @@
       "imageFileName": "Swiss-Roll-Nocciola.webp",
       "lots": [
         {
-          "expiry": "2026-06-28",
-          "qty": 7,
+          "expiry": "2026-08-28",
+          "qty": 2,
           "ordered": false
         }
       ],
@@ -849,13 +897,7 @@
       "codes": [],
       "notes": "",
       "imageFileName": "RollMax_Cacao.webp",
-      "lots": [
-        {
-          "expiry": "2026-06-28",
-          "qty": 8,
-          "ordered": false
-        }
-      ],
+      "lots": [],
       "ctSize": 12
     },
     {
@@ -929,14 +971,16 @@
       ],
       "wordings": [
         "Wafer Cacao 3*300g",
-        "Wafer Cacao Maxi Format"
+        "Wafer Cacao Maxi Format",
+        "Wafer Cacao 8x900g",
+        "Wafer Cacao 8*900g"
       ],
       "codes": [],
       "notes": "",
       "imageFileName": "Balconi_Wafer_3x300g_Cacao.webp",
       "lots": [
         {
-          "expiry": "2026-06-28",
+          "expiry": "2026-08-28",
           "qty": 6,
           "ordered": false
         }
@@ -986,7 +1030,7 @@
       "lots": [
         {
           "expiry": "2027-01-28",
-          "qty": 10,
+          "qty": 16,
           "ordered": false
         }
       ],
@@ -1008,7 +1052,7 @@
       "lots": [
         {
           "expiry": "2026-09-28",
-          "qty": 5,
+          "qty": 25,
           "ordered": false
         }
       ],
@@ -1058,22 +1102,6 @@
       "ctSize": null
     },
     {
-      "id": "prod_c215d298be8ae_19c8cb81e5f",
-      "name": "Wafer Cacao Display 30x45g",
-      "categoryIds": [
-        "cat_2b6dc5ec02725_19c8c9d569d"
-      ],
-      "wordings": [
-        "Wafer Cacao Display 30*45g",
-        "Wafer Cacao Display 30 Mini Packs"
-      ],
-      "codes": [],
-      "notes": "",
-      "imageFileName": "Display_30x45g_Cacao.webp",
-      "lots": [],
-      "ctSize": 4
-    },
-    {
       "id": "prod_e080c2e14f59b_19c8cc464d3",
       "name": "Wafer Nocciola 3x300g",
       "categoryIds": [
@@ -1081,7 +1109,9 @@
       ],
       "wordings": [
         "Wafer Nocciola 3*300g",
-        "Wafer Nocciola Maxi Format"
+        "Wafer Nocciola Maxi Format",
+        "Wafer Nocciola 8x900g",
+        "Wafer Nocciola 8*900g"
       ],
       "codes": [],
       "notes": "",
@@ -1089,7 +1119,7 @@
       "lots": [
         {
           "expiry": "2026-09-28",
-          "qty": 6,
+          "qty": 5,
           "ordered": false
         }
       ],
@@ -1140,9 +1170,12 @@
         "cat_2b6dc5ec02725_19c8c9d569d"
       ],
       "wordings": [
-        "Wafer Nocciola Cubi 250g"
+        "Wafer Nocciola Cubi 250g",
+        "CUBI'-WAFER 250g NOCCIOLA x10"
       ],
-      "codes": [],
+      "codes": [
+        "702020999990"
+      ],
       "notes": "",
       "imageFileName": "Balconi_Wafer_Cubi_Nocciola_250.webp",
       "lots": [
@@ -1238,7 +1271,7 @@
       "lots": [
         {
           "expiry": "2026-10-28",
-          "qty": 3,
+          "qty": 2,
           "ordered": false
         }
       ],
@@ -1314,12 +1347,12 @@
       "lots": [
         {
           "expiry": "2026-07-28",
-          "qty": 30,
+          "qty": 31,
           "ordered": false
         },
         {
           "expiry": "2026-12-28",
-          "qty": 8,
+          "qty": 6,
           "ordered": false
         }
       ],
@@ -1378,7 +1411,7 @@
       "lots": [
         {
           "expiry": "2026-11-28",
-          "qty": 7,
+          "qty": 2,
           "ordered": false
         }
       ],
@@ -1414,15 +1447,28 @@
       ],
       "wordings": [
         "Wafer Vaniglia Multipack 5*45g",
-        "Wafer Vaniglia Multipack 225g"
+        "Wafer Vaniglia Multipack 225g",
+        "WAFER 225g VANIGLIA x20"
       ],
-      "codes": [],
+      "codes": [
+        "703030999990"
+      ],
       "notes": "",
       "imageFileName": "Balconi_Wafer_Multipack_X5_Vaniglia.webp",
       "lots": [
         {
           "expiry": "2026-10-28",
           "qty": 3,
+          "ordered": false
+        },
+        {
+          "expiry": "2026-11-28",
+          "qty": 7,
+          "ordered": false
+        },
+        {
+          "expiry": "2026-09-28",
+          "qty": 32,
           "ordered": false
         }
       ],
@@ -1577,7 +1623,7 @@
       "lots": [
         {
           "expiry": "2026-08-28",
-          "qty": 5,
+          "qty": 8,
           "ordered": false
         },
         {
@@ -1656,7 +1702,7 @@
       "lots": [
         {
           "expiry": "2026-10-28",
-          "qty": 7,
+          "qty": 6,
           "ordered": false
         }
       ],
@@ -1722,7 +1768,7 @@
         },
         {
           "expiry": "2026-07-28",
-          "qty": 11,
+          "qty": 10,
           "ordered": false
         }
       ],
@@ -1743,7 +1789,7 @@
       "lots": [
         {
           "expiry": "2026-10-28",
-          "qty": 24,
+          "qty": 19,
           "ordered": false
         }
       ],
@@ -1838,7 +1884,7 @@
       "lots": [
         {
           "expiry": "2026-10-15",
-          "qty": 12,
+          "qty": 8,
           "ordered": false
         }
       ],
@@ -1856,9 +1902,12 @@
         "Plumcake Altograno",
         "Plume Cake Altograno 6x33g",
         "Plume Cake Altograno 6*33g",
-        "Plume Cake Altograno 198g"
+        "Plume Cake Altograno 198g",
+        "Plumcake Altograno 6*33gr"
       ],
-      "codes": [],
+      "codes": [
+        "820103999990"
+      ],
       "notes": "",
       "imageFileName": "PlumeCake_AltoGrano.webp",
       "lots": [
@@ -1883,9 +1932,12 @@
         "PlumCake Cacao",
         "Plume Cake Cioccolato 6x38g",
         "Plume Cake Cioccolato 6*38g",
-        "Plume Cake Cioccolato 228g"
+        "Plume Cake Cioccolato 228g",
+        "BALCONI PLUME CAKE CLAS.CIOCCOLATO 6x38g"
       ],
-      "codes": [],
+      "codes": [
+        "820101999990"
+      ],
       "notes": "",
       "imageFileName": "PlumeCake_Cioccolato.webp",
       "lots": [
@@ -2085,8 +2137,14 @@
       "codes": [],
       "notes": "",
       "imageFileName": "Dolce-Agnello.webp",
-      "lots": [],
-      "ctSize": null
+      "lots": [
+        {
+          "expiry": "2026-07-31",
+          "qty": 17,
+          "ordered": false
+        }
+      ],
+      "ctSize": 12
     },
     {
       "id": "prod_597b19b874104_19c8ceb0ea3",
@@ -2157,7 +2215,7 @@
       "lots": [
         {
           "expiry": "2026-10-15",
-          "qty": 14,
+          "qty": 10,
           "ordered": false
         }
       ],
@@ -2230,7 +2288,7 @@
       "lots": [
         {
           "expiry": "2026-07-31",
-          "qty": 2,
+          "qty": 9,
           "ordered": false
         }
       ],
@@ -2251,7 +2309,7 @@
       "lots": [
         {
           "expiry": "2026-07-31",
-          "qty": 7,
+          "qty": 17,
           "ordered": false
         }
       ],
@@ -2345,8 +2403,12 @@
         "cat_65f15b1a91e82_19c8c664232",
         "cat_3c04dc6c6b9b98_19c8f39679a"
       ],
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "Dal Colle Croissant Classic 5*40g"
+      ],
+      "codes": [
+        "120406100699"
+      ],
       "notes": "",
       "imageFileName": "dal-colle-croissant-classico.png",
       "lots": [
@@ -2364,17 +2426,15 @@
       "categoryIds": [
         "cat_3c04dc6c6b9b98_19c8f39679a"
       ],
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "Dal Colle Bombolone Cioccolato  5*42g"
+      ],
+      "codes": [
+        "140008100699"
+      ],
       "notes": "",
       "imageFileName": "dal-colle-bombolone-cioccolato.png",
-      "lots": [
-        {
-          "expiry": "2026-08-28",
-          "qty": 2,
-          "ordered": false
-        }
-      ]
+      "lots": []
     },
     {
       "id": "prod_ddf0e9f07be8d_19c957b30c9",
@@ -2405,13 +2465,7 @@
       "codes": [],
       "notes": "",
       "imageFileName": "dal-colle-bombolone-crema.png",
-      "lots": [
-        {
-          "expiry": "2026-08-28",
-          "qty": 2,
-          "ordered": false
-        }
-      ],
+      "lots": [],
       "ctSize": null
     },
     {
@@ -2429,13 +2483,7 @@
       "codes": [],
       "notes": "",
       "imageFileName": "melegatti-croissant-6pz-x50gr-pistacchio.jpg",
-      "lots": [
-        {
-          "expiry": "2026-06-17",
-          "qty": 1,
-          "ordered": false
-        }
-      ]
+      "lots": []
     },
     {
       "id": "prod_a4d98161dccf68_19c995979a9",
@@ -2474,13 +2522,7 @@
       "codes": [],
       "notes": "",
       "imageFileName": "torta_di_mele_400gr_@UPL.png",
-      "lots": [
-        {
-          "expiry": "2026-06-30",
-          "qty": 12,
-          "ordered": false
-        }
-      ],
+      "lots": [],
       "ctSize": 12
     },
     {
@@ -2543,13 +2585,7 @@
       "codes": [],
       "notes": "",
       "imageFileName": "cuor-di-frolla-limone-500g.png",
-      "lots": [
-        {
-          "expiry": "2026-06-30",
-          "qty": 2,
-          "ordered": false
-        }
-      ],
+      "lots": [],
       "ctSize": 12
     },
     {
@@ -2566,13 +2602,7 @@
       "codes": [],
       "notes": "",
       "imageFileName": "cuor-di-frolla-cacao-500g.png",
-      "lots": [
-        {
-          "expiry": "2026-06-30",
-          "qty": 5,
-          "ordered": false
-        }
-      ],
+      "lots": [],
       "ctSize": 12
     },
     {
@@ -2604,8 +2634,12 @@
       "categoryIds": [
         "cat_3c04dc6c6b9b98_19c8f39679a"
       ],
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "Dal Colle Bonn Classico 5*38g"
+      ],
+      "codes": [
+        "140106100699"
+      ],
       "notes": "",
       "imageFileName": "DAL-COLLE-BONN-GLASSATO-x5-190gr-1-640x640-1.png",
       "lots": [
@@ -2639,12 +2673,16 @@
     {
       "id": "prod_7dd38f74b6916_19c996df675",
       "name": "Croissant Lievitato Classico",
-      "ctSize": 9,
+      "ctSize": 8,
       "categoryIds": [
         "cat_65f15b1a91e82_19c8c664232"
       ],
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "Croissant Clas.Lievitato sacch.9*40g Bal"
+      ],
+      "codes": [
+        "122406999990"
+      ],
       "notes": "",
       "imageFileName": "balconi-croissant-liev-class.png",
       "lots": [
@@ -2661,22 +2699,20 @@
       "categoryIds": [
         "cat_65f15b1a91e82_19c8c664232"
       ],
-      "wordings": [],
-      "codes": [],
+      "wordings": [
+        "Croissant Albicocca Lievitato 8*45gr Bal"
+      ],
+      "codes": [
+        "123409999990"
+      ],
       "notes": "",
       "imageFileName": "balconi-croissant-liev-alb.png",
-      "lots": [
-        {
-          "expiry": "2026-06-28",
-          "qty": 6,
-          "ordered": false
-        }
-      ],
-      "ctSize": 9
+      "lots": [],
+      "ctSize": 8
     },
     {
       "id": "prod_b063d7b4b70db_19c9976c180",
-      "name": "Dolce Indora Tartine Mela",
+      "name": "DolceIndora Tartine Mela",
       "ctSize": null,
       "categoryIds": [],
       "wordings": [
@@ -2684,7 +2720,7 @@
       ],
       "codes": [],
       "notes": "",
-      "imageFileName": "",
+      "imageFileName": "Dolcendora tartellette mela.png",
       "lots": [
         {
           "expiry": "2026-09-30",
@@ -2791,9 +2827,12 @@
       "wordings": [
         "Mix Max Buonissimo 15x30",
         "Mix Max Buonissimo 15*30",
-        "Mix Max Buonissimo 450g"
+        "Mix Max Buonissimo 450g",
+        "DISPLAY MIX MAX BUONISSIMO! 15x30g EU2"
       ],
-      "codes": [],
+      "codes": [
+        "852140999995"
+      ],
       "notes": "",
       "imageFileName": "mix-max-buonissimo.png",
       "lots": []
@@ -2808,9 +2847,12 @@
         "Mix Milk Buonissimo 15x30",
         "Mix Milk Buonissimo 15*30",
         "Mix Milk Buonissimo 450g",
-        "Mix Max Milk Buonissimo"
+        "Mix Max Milk Buonissimo",
+        "DISPLAY MIX MILK BUONISSIMO! 15x30g EU2"
       ],
-      "codes": [],
+      "codes": [
+        "852150999995"
+      ],
       "notes": "",
       "imageFileName": "mix-milk-buonissimo.png",
       "lots": [],
@@ -2829,8 +2871,19 @@
       "codes": [],
       "notes": "",
       "imageFileName": "Display_30x45g_Cacao.webp",
-      "lots": [],
-      "ctSize": null
+      "lots": [
+        {
+          "expiry": "2027-02-28",
+          "qty": 8,
+          "ordered": false
+        },
+        {
+          "expiry": "2026-12-28",
+          "qty": 4,
+          "ordered": false
+        }
+      ],
+      "ctSize": 4
     },
     {
       "id": "prod_5660ce4fd60348_19cad8ec8b0",
@@ -2848,7 +2901,7 @@
       "lots": [
         {
           "expiry": "2027-02-28",
-          "qty": 2,
+          "qty": 17,
           "ordered": false
         }
       ],
@@ -2929,6 +2982,27 @@
           "ordered": false
         }
       ]
+    },
+    {
+      "id": "prod_6e1b5fa88962d_19cbe868d5b",
+      "name": "Dal Colle Colomba Gocce di Cioccolato",
+      "categoryIds": [
+        "cat_3c04dc6c6b9b98_19c8f39679a"
+      ],
+      "wordings": [
+        "Dal Colle Colomba Gocce di Cioccolato 700g"
+      ],
+      "codes": [],
+      "notes": "",
+      "imageFileName": "dal-colle-cioccolato.png",
+      "lots": [
+        {
+          "expiry": "2026-07-31",
+          "qty": 10,
+          "ordered": false
+        }
+      ],
+      "ctSize": null
     }
   ]
 }
