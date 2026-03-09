@@ -93,6 +93,7 @@ Object.assign(els, {
   shipmentCartPanel: $("#shipmentCartPanel"),
   shipmentCartList: $("#shipmentCartList"),
   shipmentCartSummary: $("#shipmentCartSummary"),
+  cartOverview: $("#cartOverview"),
   btnClearCart: $("#btnClearCart"),
   cartShipDate: $("#cartShipDate"),
   cartDestination: $("#cartDestination"),
@@ -246,19 +247,6 @@ async function portalSaveCatalogue() {
   if (error) { alert("Save failed: " + error.message); return; }
   setDirty(false);
   alert("Saved online ✅");
-}
-
-async function portalSaveCatalogueSilent() {
-  if (!isAdmin() || !supabaseClient || !state) return false;
-  const { error } = await supabaseClient
-    .from("catalogue")
-    .upsert({ id: CATALOGUE_ROW_ID, data: state, updated_at: new Date().toISOString() }, { onConflict: "id" });
-  if (error) {
-    console.error("Silent save failed:", error.message);
-    return false;
-  }
-  setDirty(false);
-  return true;
 }
 /* ------------------------------------------------------------------------------- */
 
@@ -679,14 +667,6 @@ function setDirty(isDirty) {
   if (isDirty && fs.folderHandle) {
     if (els.folderStatus) els.folderStatus.textContent = "Folder mode: ON (saving…)";
     requestAutosave();
-  }
-
-  // autosave online in Supabase mode
-  if (isDirty && !fs.folderHandle && supabaseClient && isAdmin()) {
-    if (autosaveTimer) clearTimeout(autosaveTimer);
-    autosaveTimer = setTimeout(() => {
-      portalSaveCatalogueSilent();
-    }, 700);
   }
 }
 
@@ -2076,6 +2056,7 @@ function filteredShipments() {
 
 function renderShipmentHistory() {
   if (!els.shipHistBody) return;
+  state.shipments = normalizeShipmentRecords(state.shipments);
   const rows = filteredShipments();
   els.shipHistBody.innerHTML = '';
   if (!rows.length) {
@@ -2087,24 +2068,28 @@ function renderShipmentHistory() {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${formatDateDMY(s.date)}</td>
-        <td>${escapeHtml(s.productName || '')}</td>
-        <td>${s.qty}</td>
+        <td>${escapeHtml(shipmentItemsText(s))}</td>
         <td>${escapeHtml(s.destination || '')}</td>
         <td>${escapeHtml(s.recipient || '')}</td>
         <td>${escapeHtml(s.reference || '')}</td>
         <td>${escapeHtml(s.notes || '')}</td>
-        <td class="shipDel">${isAdmin() ? '<button class="btn small ghost danger" type="button">Del</button>' : ''}</td>`;
-      const btn = tr.querySelector('button');
-      if (btn) btn.addEventListener('click', () => deleteShipment(s.id));
+        <td>${s.extraUE ? 'Yes' : 'No'}</td>
+        <td class="shipDel">
+          <div class="shipRowActions">
+            <button class="btn small ghost" type="button" data-act="pdf">PDF</button>
+            <button class="btn small ghost" type="button" data-act="edit">Edit</button>
+            ${s.extraUE ? '<button class="btn small ghost" type="button" data-act="dhl">DHL</button>' : ''}
+            ${isAdmin() ? '<button class="btn small ghost danger" type="button" data-act="del">Del</button>' : ''}
+          </div>
+        </td>`;
+      tr.querySelector('[data-act="pdf"]')?.addEventListener('click', () => exportShipmentFromHistory(s.id, 'pdf'));
+      tr.querySelector('[data-act="edit"]')?.addEventListener('click', () => editShipment(s.id));
+      tr.querySelector('[data-act="dhl"]')?.addEventListener('click', () => exportShipmentFromHistory(s.id, 'dhl'));
+      tr.querySelector('[data-act="del"]')?.addEventListener('click', () => deleteShipment(s.id));
       els.shipHistBody.appendChild(tr);
     }
   }
   if (els.shipHistCount) els.shipHistCount.textContent = `${rows.length} shipment${rows.length === 1 ? '' : 's'}`;
-}
-
-function openShipmentHistoryDlg() {
-  renderShipmentHistory();
-  els.shipHistDlg.showModal();
 }
 
 function deleteShipment(id) {
@@ -2112,7 +2097,6 @@ function deleteShipment(id) {
   if (!confirm('Delete this shipment record?')) return;
   state.shipments = (state.shipments || []).filter(x => x.id !== id);
   setDirty(true);
-  portalSaveCatalogueSilent();
   renderShipmentHistory();
 }
 
@@ -2364,10 +2348,19 @@ function renderShipmentCart() {
   if (!shipmentCart.length) {
     box.innerHTML = `<div class="shipmentCartEmpty">Cart empty. Use “Add to cart” on a product.</div>`;
     if (els.shipmentCartSummary) els.shipmentCartSummary.textContent = "No products in cart.";
+    if (els.cartOverview) {
+      els.cartOverview.innerHTML = `
+        <div class="cartOverviewCard is-empty">
+          <div class="cartOverviewStat"><b>0</b><span>lines</span></div>
+          <div class="cartOverviewStat"><b>0</b><span>units</span></div>
+          <div class="cartOverviewStat"><b>0</b><span>CT</span></div>
+        </div>`;
+    }
     return;
   }
 
   let totalUnits = 0;
+  let totalCt = 0;
 
   for (const item of shipmentCart) {
     const p = state.products.find(x => x.id === item.productId);
@@ -2378,30 +2371,47 @@ function renderShipmentCart() {
     const unitOptions = [`<option value="units" ${item.unitMode !== "ct" ? 'selected' : ''}>Units</option>`];
     if (p.ctSize && p.ctSize > 0) unitOptions.push(`<option value="ct" ${item.unitMode === "ct" ? 'selected' : ''}>Boxes / CT</option>`);
 
+    const fileName = (p.imageFileName || '').trim();
+    const imgHtml = fileName
+      ? `<img class="shipmentCartThumbImg" src="media/${escapeHtml(fileName)}" alt="${escapeHtml(item.productName)}" onerror="this.closest('.shipmentCartThumb').classList.add('is-empty');this.remove()">`
+      : '';
+    const thumbClass = fileName ? 'shipmentCartThumb' : 'shipmentCartThumb is-empty';
+
     row.innerHTML = `
-      <div class="shipmentCartItemHead">
-        <div class="shipmentCartItemName">${escapeHtml(item.productName)}</div>
-        <button class="btn small ghost danger" type="button" data-cart-act="remove">Remove</button>
-      </div>
-      <div class="shipmentCartGrid">
-        <label class="row">
-          <span>Lot</span>
-          <select data-cart-act="lot">${buildLotOptionsHtml(p, item.lotExpiry)}</select>
-        </label>
-        <label class="row">
-          <span>Mode</span>
-          <select data-cart-act="mode">${unitOptions.join('')}</select>
-        </label>
-        <label class="row">
-          <span>Quantity</span>
-          <input data-cart-act="qty" type="number" min="1" step="1" value="${Math.max(1, Math.trunc(Number(item.qty)||1))}">
-        </label>
-        <div class="cartMiniBtns">
-          <button class="btn small ghost" type="button" data-cart-act="minus">-</button>
-          <button class="btn small" type="button" data-cart-act="plus">+</button>
+      <div class="shipmentCartItemTop">
+        <div class="${thumbClass}">
+          ${imgHtml}
+          <span>${fileName ? '' : 'No image'}</span>
+        </div>
+        <div class="shipmentCartMain">
+          <div class="shipmentCartItemHead">
+            <div>
+              <div class="shipmentCartItemName">${escapeHtml(item.productName)}</div>
+              <div class="shipmentCartItemSub">${p.ctSize ? `CT size: ${p.ctSize}` : 'No CT size set'}${item.unitMode === 'ct' ? ' • Mode: boxes' : ' • Mode: units'}</div>
+            </div>
+            <button class="btn small ghost danger" type="button" data-cart-act="remove">Remove</button>
+          </div>
+          <div class="shipmentCartGrid">
+            <label class="row">
+              <span>Lot</span>
+              <select data-cart-act="lot">${buildLotOptionsHtml(p, item.lotExpiry)}</select>
+            </label>
+            <label class="row">
+              <span>Mode</span>
+              <select data-cart-act="mode">${unitOptions.join('')}</select>
+            </label>
+            <label class="row">
+              <span>Qty</span>
+              <input data-cart-act="qty" type="number" min="1" step="1" value="${Math.max(1, Math.trunc(Number(item.qty)||1))}">
+            </label>
+            <div class="cartMiniBtns">
+              <button class="btn small ghost" type="button" data-cart-act="minus">-</button>
+              <button class="btn small" type="button" data-cart-act="plus">+</button>
+            </div>
+          </div>
+          <div class="shipmentCartMeta" data-cart-meta></div>
         </div>
       </div>
-      <div class="shipmentCartMeta" data-cart-meta></div>
     `;
 
     const lotSel = row.querySelector('[data-cart-act="lot"]');
@@ -2412,10 +2422,12 @@ function renderShipmentCart() {
     function syncMeta() {
       const availableUnits = shipmentItemAvailableUnits(item);
       const requestedUnits = cartItemRequestedUnits(item);
-      const status = requestedUnits > availableUnits ? 'Not enough stock in selected lot.' : 'OK';
-      let extra = `Available in selected lot: ${shipmentItemAvailableDisplay(item)} • Requested: ${requestedUnits} units`;
-      if (p.ctSize) extra += ` • CT size: ${p.ctSize}`;
+      const requestedCt = p.ctSize ? (requestedUnits / p.ctSize) : 0;
+      const status = requestedUnits > availableUnits ? 'Not enough stock in selected lot.' : 'Ready';
+      let extra = `Available: ${shipmentItemAvailableDisplay(item)} • Requested: ${requestedUnits} units`;
+      if (p.ctSize) extra += ` • ${requestedCt % 1 === 0 ? requestedCt.toFixed(0) : requestedCt.toFixed(2)} CT`;
       meta.textContent = `${extra} • ${status}`;
+      meta.classList.toggle('is-error', requestedUnits > availableUnits);
     }
 
     lotSel.addEventListener("change", () => {
@@ -2437,6 +2449,7 @@ function renderShipmentCart() {
     qtyInp.addEventListener("input", () => {
       item.qty = Math.max(1, Math.trunc(Number(qtyInp.value) || 1));
       syncMeta();
+      updateCartOverview();
     });
     row.querySelector('[data-cart-act="plus"]').addEventListener("click", () => {
       item.qty = Math.max(1, Math.trunc(Number(item.qty) || 1)) + 1;
@@ -2452,13 +2465,39 @@ function renderShipmentCart() {
     });
 
     syncMeta();
-    totalUnits += cartItemRequestedUnits(item);
+    const requestedUnits = cartItemRequestedUnits(item);
+    totalUnits += requestedUnits;
+    if (p.ctSize) totalCt += requestedUnits / p.ctSize;
     box.appendChild(row);
   }
 
   if (els.shipmentCartSummary) {
     els.shipmentCartSummary.textContent = `${shipmentCart.length} product line${shipmentCart.length === 1 ? '' : 's'} • ${totalUnits} total units`;
   }
+  updateCartOverview(totalUnits, totalCt);
+}
+
+function updateCartOverview(totalUnits=null, totalCt=null) {
+  if (!els.cartOverview) return;
+  const lines = shipmentCart.length;
+  if (totalUnits == null || totalCt == null) {
+    totalUnits = 0;
+    totalCt = 0;
+    for (const item of shipmentCart) {
+      const p = state.products.find(x => x.id === item.productId);
+      if (!p) continue;
+      const units = cartItemRequestedUnits(item);
+      totalUnits += units;
+      if (p.ctSize) totalCt += units / p.ctSize;
+    }
+  }
+  const ctLabel = Number.isFinite(totalCt) ? (Math.round(totalCt * 100) / 100).toString() : '0';
+  els.cartOverview.innerHTML = `
+    <div class="cartOverviewCard${lines ? '' : ' is-empty'}">
+      <div class="cartOverviewStat"><b>${lines}</b><span>lines</span></div>
+      <div class="cartOverviewStat"><b>${totalUnits}</b><span>units</span></div>
+      <div class="cartOverviewStat"><b>${ctLabel}</b><span>CT</span></div>
+    </div>`;
 }
 
 function buildShipmentDraftFromCart(requireValidation=true) {
@@ -2576,6 +2615,62 @@ function filteredShipments() {
   return arr.filter(s => [shipmentItemsText(s), s.destination, s.recipient, s.reference, s.notes, s.extraUE ? 'dhl extra ue' : ''].join(' ').toLowerCase().includes(q));
 }
 
+function restoreShipmentToStock(shipment) {
+  for (const item of (shipment?.items || [])) {
+    const p = state.products.find(x => x.id === item.productId);
+    if (!p) continue;
+    p.lots = normalizeLots(p.lots || []);
+    let lot = p.lots.find(l => !l.ordered && getLotKey(l.expiry) === getLotKey(item.lotExpiry));
+    if (!lot) {
+      lot = { expiry: item.lotExpiry || '', qty: 0, ordered: false };
+      p.lots.push(lot);
+    }
+    lot.qty = Math.max(0, Math.trunc(Number(lot.qty) || 0)) + Math.max(0, Math.trunc(Number(item.unitsQty) || 0));
+    p.lots = normalizeLots(p.lots);
+  }
+}
+
+function loadShipmentIntoCart(shipment) {
+  shipmentCart = (shipment?.items || []).map(it => ({
+    id: uid("cart"),
+    productId: it.productId,
+    productName: it.productName,
+    lotExpiry: it.lotExpiry || '',
+    unitMode: it.unitMode === "ct" ? "ct" : "units",
+    qty: Math.max(1, Math.trunc(Number(it.qty) || 1))
+  }));
+  if (els.cartShipDate) els.cartShipDate.value = formatDateDMY(shipment?.date || todayISO());
+  if (els.cartDestination) els.cartDestination.value = shipment?.destination || '';
+  if (els.cartRecipient) els.cartRecipient.value = shipment?.recipient || '';
+  if (els.cartReference) els.cartReference.value = shipment?.reference || '';
+  if (els.cartNotes) els.cartNotes.value = shipment?.notes || '';
+  if (els.cartExtraUE) els.cartExtraUE.checked = !!shipment?.extraUE;
+  renderShipmentCart();
+}
+
+function editShipment(id) {
+  if (!isAdmin()) return;
+  const shipment = normalizeShipmentRecords(state.shipments).find(x => x.id === id);
+  if (!shipment) return;
+  if (!confirm('Load this shipment back into the cart for editing?')) return;
+  restoreShipmentToStock(shipment);
+  state.shipments = normalizeShipmentRecords(state.shipments).filter(x => x.id !== id);
+  loadShipmentIntoCart(shipment);
+  setDirty(true);
+  render();
+  renderShipmentHistory();
+  els.shipHistDlg?.close();
+  document.getElementById('shipmentCartPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function exportShipmentFromHistory(id, kind = 'pdf') {
+  const shipment = normalizeShipmentRecords(state.shipments).find(x => x.id === id);
+  if (!shipment) return;
+  if (kind === 'pdf') exportShipmentDraftPDF(shipment);
+  else if (kind === 'excel') exportShipmentDraftExcel(shipment);
+  else if (kind === 'dhl') exportDHLList(shipment);
+}
+
 function renderShipmentHistory() {
   if (!els.shipHistBody) return;
   state.shipments = normalizeShipmentRecords(state.shipments);
@@ -2596,9 +2691,9 @@ function renderShipmentHistory() {
         <td>${escapeHtml(s.reference || '')}</td>
         <td>${escapeHtml(s.notes || '')}</td>
         <td>${s.extraUE ? 'Yes' : 'No'}</td>
-        <td class="shipDel">${isAdmin() ? '<button class="btn small ghost" data-act="pdf" type="button">PDF</button> <button class="btn small ghost danger" data-act="del" type="button">Del</button>' : '<button class="btn small ghost" data-act="pdf" type="button">PDF</button>'}</td>`;
-      tr.querySelector('[data-act="pdf"]')?.addEventListener('click', () => exportShipmentDraftPDF(s));
-      tr.querySelector('[data-act="del"]')?.addEventListener('click', () => deleteShipment(s.id));
+        <td class="shipDel">${isAdmin() ? '<button class="btn small ghost danger" type="button">Del</button>' : ''}</td>`;
+      const btn = tr.querySelector('button');
+      if (btn) btn.addEventListener('click', () => deleteShipment(s.id));
       els.shipHistBody.appendChild(tr);
     }
   }
@@ -2667,32 +2762,6 @@ function exportCatalogueExcel() {
   XLSX.writeFile(wb, `campionature_${todayISO()}.xlsx`);
 }
 
-function shipmentSequenceForDate(dateISO, excludeShipmentId = "") {
-  const key = String(dateISO || "").slice(0, 10);
-  const sameDate = normalizeShipmentRecords(state?.shipments).filter(s => String(s.date || "").slice(0, 10) === key && s.id !== excludeShipmentId);
-  return sameDate.length + 1;
-}
-
-function compactDateYYMMDD(dateISO) {
-  const d = String(dateISO || todayISO()).slice(0, 10);
-  const [y, m, day] = d.split('-');
-  return `${String(y || '').slice(-2)}${m || ''}${day || ''}`;
-}
-
-function sanitizeFilePart(value) {
-  return String(value || '')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 60) || 'Cliente';
-}
-
-function shipmentFileBaseName(draft) {
-  const seq = String(shipmentSequenceForDate(draft.date, draft.id)).padStart(3, '0');
-  const customer = sanitizeFilePart(draft.recipient || draft.destination || 'Cliente');
-  return `Campionatura_${compactDateYYMMDD(draft.date)}-${seq}_${customer}`;
-}
-
 function exportShipmentDraftExcel(draft) {
   if (!draft || !draft.items?.length) { alert("Cart is empty."); return; }
   if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
@@ -2712,7 +2781,7 @@ function exportShipmentDraftExcel(draft) {
     ExtraUE: draft.extraUE ? 'Yes' : 'No'
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Shipment');
-  XLSX.writeFile(wb, `${shipmentFileBaseName(draft)}.xlsx`);
+  XLSX.writeFile(wb, `${draft.id}.xlsx`);
 }
 
 function exportShipmentDraftPDF(draft) {
@@ -2722,7 +2791,7 @@ function exportShipmentDraftPDF(draft) {
   const doc = new jspdfNs.jsPDF();
   let y = 16;
   doc.setFontSize(16);
-  doc.text(`Shipment ${shipmentFileBaseName(draft)}`, 14, y); y += 8;
+  doc.text(`Shipment ${draft.id}`, 14, y); y += 8;
   doc.setFontSize(11);
   const head = [
     `Date: ${draft.date}`,
@@ -2746,7 +2815,7 @@ function exportShipmentDraftPDF(draft) {
     });
     y += 2;
   });
-  doc.save(`${shipmentFileBaseName(draft)}.pdf`);
+  doc.save(`${draft.id}.pdf`);
 }
 
 function exportDHLList(draft) {
@@ -2764,7 +2833,7 @@ function exportDHLList(draft) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${shipmentFileBaseName(draft)}_DHL_List.txt`;
+  a.download = `${draft.id}_DHL_List.txt`;
   document.body.appendChild(a);
   a.click();
   a.remove();
