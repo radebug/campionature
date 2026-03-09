@@ -62,6 +62,8 @@
     <section class="content">
       <div id="filterLine" class="filterLine"></div>
 
+      <button class="btn mobileCartToggle" type="button" id="btnMobileCartToggle">Cart <span id="mobileCartCount">0</span></button>
+
       <section class="shipmentCartPanel" id="shipmentCartPanel">
         <div class="shipmentCartHead">
           <div>
@@ -69,6 +71,7 @@
             <div class="smallNote" id="shipmentCartSummary">No products in cart.</div>
           </div>
           <div class="shipmentCartActionsTop">
+            <button class="btn ghost mobileOnly" type="button" id="btnCloseMobileCart">Close</button>
             <button class="btn ghost" type="button" id="btnClearCart">Clear cart</button>
           </div>
         </div>
@@ -115,6 +118,8 @@
           </div>
         </div>
       </section>
+
+      <div class="mobileCartBackdrop" id="mobileCartBackdrop" hidden></div>
 
       <div id="productGrid" class="productGrid"></div>
       <div id="empty" class="empty" hidden>No products found.</div>
