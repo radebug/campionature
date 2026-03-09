@@ -1,1 +1,161 @@
-// index.html placeholder
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Product Catalogue</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="titleWrap">
+      <div class="title">Product Catalogue</div>
+      <div class="subtitle">Mobile-ready catalogue with multi-product shipments</div>
+    </div>
+
+    <div class="toolbar">
+      <input class="search" id="search" type="search" placeholder="Search products..." />
+      <button class="btn" id="btnHistory" type="button">Shipping history</button>
+      <button class="btn" id="btnSaveJson" type="button">Download JSON</button>
+      <label class="btn ghost fileBtn">Load JSON<input id="filePicker" type="file" accept="application/json" hidden></label>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="sidebarCard">
+        <div class="sidebarTitle">Categories</div>
+        <input class="search" id="catSearch" type="search" placeholder="Filter categories..." />
+        <div id="categoryList" class="categoryList"></div>
+      </div>
+
+      <section class="sidebarCard cartCard">
+        <div class="cartHead">
+          <div>
+            <div class="sidebarTitle">Shipment cart</div>
+            <div class="smallNote" id="cartInfo">No products selected.</div>
+          </div>
+          <button class="btn small" id="btnToggleCart" type="button">Open</button>
+        </div>
+
+        <div id="cartPanel" class="cartPanel">
+          <div id="cartList" class="cartList"></div>
+
+          <div class="cartMetaGrid">
+            <label class="row">
+              <span>Date</span>
+              <input id="shipDate" type="date" />
+            </label>
+            <label class="row">
+              <span>Destination</span>
+              <input id="shipDestination" type="text" placeholder="Customer / city / office" />
+            </label>
+            <label class="row">
+              <span>Recipient</span>
+              <input id="shipRecipient" type="text" placeholder="Name / department" />
+            </label>
+            <label class="row">
+              <span>Reference</span>
+              <input id="shipReference" type="text" placeholder="Courier / tracking / internal ref" />
+            </label>
+          </div>
+
+          <label class="row">
+            <span>Notes</span>
+            <textarea id="shipNotes" rows="3" placeholder="Optional notes"></textarea>
+          </label>
+
+          <label class="checkLine">
+            <input id="shipExtraUE" type="checkbox" />
+            <span>Extra UE / DHL list</span>
+          </label>
+
+          <div class="cartActions">
+            <button class="btn ghost" id="btnClearCart" type="button">Clear</button>
+            <button class="btn" id="btnCreateShipment" type="button">Create shipment</button>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="content">
+      <div class="filterLine" id="filterLine"></div>
+      <div class="productGrid" id="productGrid"></div>
+      <div class="empty" id="empty" hidden>No products found.</div>
+    </section>
+  </main>
+
+  <dialog class="dlg" id="historyDlg">
+    <form method="dialog" class="dlgBody xl" id="historyForm">
+      <div class="dlgTitle">Shipping history</div>
+      <div class="historyTools">
+        <input class="search" id="historySearch" type="search" placeholder="Search reference / destination / product..." />
+        <button class="btn" type="button" id="btnExportHistory">Export Excel</button>
+      </div>
+      <div class="historyList" id="historyList"></div>
+      <div class="dlgBtns">
+        <button class="btn ghost" type="button" id="btnHistoryClose">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <template id="productCardTpl">
+    <article class="card">
+      <div class="thumb">
+        <img class="thumbImg" alt="" />
+        <div class="thumbEmpty">No image</div>
+      </div>
+      <div class="cardBody">
+        <div class="cardTop">
+          <div class="pName"></div>
+          <div class="pill pCat"></div>
+        </div>
+        <div class="stockLine">
+          <div class="stockTotal"></div>
+          <div class="ctPill"></div>
+        </div>
+        <div class="btnRow">
+          <button class="btn small" data-act="add" type="button">Add to cart</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <template id="cartRowTpl">
+    <div class="cartRow">
+      <div class="cartRowTop">
+        <div>
+          <div class="cartName"></div>
+          <div class="smallNote cartSub"></div>
+        </div>
+        <button class="btn small ghost danger" data-act="remove" type="button">✕</button>
+      </div>
+
+      <div class="cartControls">
+        <label class="row">
+          <span>Lot</span>
+          <select class="cartLot"></select>
+        </label>
+
+        <label class="row">
+          <span>Mode</span>
+          <select class="cartMode">
+            <option value="units">Units</option>
+            <option value="ct">Boxes / CT</option>
+          </select>
+        </label>
+
+        <label class="row">
+          <span>Qty</span>
+          <input class="cartQty" type="number" min="1" step="1" value="1" />
+        </label>
+      </div>
+
+      <div class="cartSummary"></div>
+    </div>
+  </template>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
