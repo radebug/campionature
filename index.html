@@ -50,7 +50,8 @@
 
   <main class="layout">
     <aside class="sidebar">
-      <div class="h">Categories</div>
+      <div class="sidebarHeader">
+        <div class="h">Categories</div>
         <input type="text" id="catSearch" class="search" placeholder="Filter categories..." style="width: 100%; margin-bottom: 10px; padding: 6px 10px; font-size: 13px;">
       </div>
       <div id="categoryList" class="categoryList"></div>
@@ -71,6 +72,12 @@
           <div class="shipmentCartActionsTop">
             <button class="btn ghost" type="button" id="btnClearCart">Clear cart</button>
           </div>
+        </div>
+
+        <div class="shipmentCartStats">
+          <div class="shipmentStat"><strong id="cartLinesCount">0</strong><span>LINES</span></div>
+          <div class="shipmentStat"><strong id="cartUnitsCount">0</strong><span>UNITS</span></div>
+          <div class="shipmentStat"><strong id="cartCtCount">0</strong><span>CT</span></div>
         </div>
 
         <div id="shipmentCartList" class="shipmentCartList"></div>
