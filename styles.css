@@ -97,23 +97,14 @@ code{background:#f3f5f8;border:1px solid var(--line);padding:1px 5px;border-radi
 .catName{font-weight:600}
 .catBtns{display:flex;gap:6px}
 
-.content{
-  padding:10px;
-  display:grid;
-  grid-template-columns:minmax(0,1fr) 340px;
-  gap:12px;
-  align-items:start;
-}
-.filterLine{grid-column:1 / -1;color:var(--muted);font-size:12px;margin-bottom:0}
+.content{padding:10px}
+.filterLine{color:var(--muted);font-size:12px;margin-bottom:10px}
 
 .productGrid{
-  grid-column:1;
   display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
   gap:10px;
-  align-content:start;
 }
-.empty{grid-column:1;}
 
 /* Card layout: image on top, not cropped */
 .card{
@@ -537,63 +528,4 @@ textarea{resize:vertical}
 .cartCheckRow{justify-content:flex-end}
 @media (max-width: 900px){
   .shipmentCartGrid{grid-template-columns:1fr 1fr}
-}
-
-
-.shipmentCartPanel{
-  grid-column:2;
-  grid-row:2 / span 2;
-  margin-bottom:0;
-  position:sticky;
-  top:82px;
-  max-height:calc(100vh - 96px);
-  display:flex;
-  flex-direction:column;
-}
-.shipmentCartStats{
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:8px;
-  margin:2px 0 10px;
-}
-.shipmentStat{
-  border:1px solid var(--line);
-  border-radius:12px;
-  background:#f5f7fc;
-  text-align:center;
-  padding:10px 6px;
-}
-.shipmentStat strong{display:block;font-size:24px;line-height:1;font-weight:800}
-.shipmentStat span{display:block;font-size:11px;color:var(--muted);margin-top:4px;letter-spacing:.4px}
-.shipmentCartList{
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  margin-bottom:10px;
-  overflow:auto;
-  padding-right:4px;
-}
-.shipmentCartItem{padding:8px}
-.shipmentCartItemBody{display:grid;grid-template-columns:68px minmax(0,1fr);gap:8px;align-items:start}
-.shipmentCartThumb{width:68px;height:68px;border:1px solid var(--line);border-radius:10px;background:#f7f8fb;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.shipmentCartThumb img{width:100%;height:100%;object-fit:contain;background:#fff}
-.shipmentCartThumbEmpty{font-size:10px;color:var(--muted);text-align:center;padding:4px}
-.shipmentCartMain{min-width:0}
-.shipmentCartItemHead{margin-bottom:6px}
-.shipmentCartItemName{font-size:13px;line-height:1.25}
-.shipmentCartGrid{grid-template-columns:minmax(0,1.3fr) 100px 70px auto;gap:6px}
-.shipmentCartGrid .row span{font-size:11px}
-.shipmentCartGrid select,.shipmentCartGrid input{padding:7px 8px}
-.shipmentCartMeta{font-size:11px;line-height:1.35;margin-top:6px}
-.shipmentCartForm{border-top:1px solid var(--line);padding-top:10px;margin-top:auto}
-.shipmentCartForm .rowBtns .btn:first-child{background:#4a5fd0;color:#fff;border-color:#4a5fd0;font-weight:700}
-.shipActions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
-
-@media (max-width: 1180px){
-  .content{grid-template-columns:minmax(0,1fr) 320px}
-}
-@media (max-width: 960px){
-  .content{grid-template-columns:1fr}
-  .shipmentCartPanel{grid-column:1;grid-row:auto;position:static;max-height:none}
-  .filterLine,.productGrid,.empty{grid-column:1}
 }
