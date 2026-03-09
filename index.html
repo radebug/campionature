@@ -3,137 +3,186 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Product Catalogue</title>
+  <title>Campionature — Product Catalogue</title>
   <link rel="stylesheet" href="styles.css" />
-<style>
-/* ---- ONLINE MODE (Supabase): hide local file/folder UI ---- */
-#btnOpenFolder, #folderStatus, #btnLoad, #filePicker, #fileNote, #btnLoadUrl, #urlInput,
-#btnSaveJson, #btnLoadJson, #btnUseFolder { display:none !important; }
-.auth { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.authInput { width: 160px; }
-@media (max-width: 980px){ .authInput{ width: 140px; } }
-</style>
+  <style>
+    /* ---- ONLINE MODE: hide local file/folder UI ---- */
+    #btnOpenFolder, #folderStatus, #btnLoad, #filePicker, #fileNote,
+    #btnLoadUrl, #urlInput, #btnSaveJson, #btnLoadJson, #btnUseFolder { display:none !important; }
+  </style>
 </head>
 <body>
+
+  <!-- ===== TOP NAV ===== -->
   <header class="topbar">
-    <div class="title">Product Catalogue</div>
-
-    <div class="toolbar">
-      <button class="btn" id="btnOpenFolder">Use catalogue folder…</button>
-      <span class="note" id="folderStatus">Folder mode: OFF</span>
-
-      <button class="btn" id="btnLoad">Load JSON</button>
-      <button class="btn" id="btnSave" disabled>Save JSON</button>
-
-      <span class="note" id="fileNote">No file loaded.</span>
-      <div class="spacer"></div>
-
-      
-      <div class="spacer"></div>
-      <div class="auth">
-        <span class="note" id="authStatus">Viewer mode</span>
-        <input class="search authInput" id="authUser" type="text" placeholder="username" autocomplete="username">
-        <input class="search authInput" id="authPass" type="password" placeholder="password" autocomplete="current-password">
-        <button class="btn" id="btnLogin">Admin login</button>
-        <button class="btn" id="btnLogout" style="display:none">Logout</button>
+    <div class="topbar-main">
+      <!-- Brand -->
+      <div class="brand">
+        🍰 Campionature
+        <small>Product Catalogue</small>
       </div>
 
-      <input class="search" id="search" type="search" placeholder="Search name / wordings / codes…" disabled />
-      <button class="btn" id="btnAddProduct" disabled>Add product</button>
-      <button class="btn" id="btnAddCategory" disabled>Add category</button>
-      <button class="btn" id="btnShipments" disabled>Shipping history</button>
-      <button class="btn" id="btnExportExcel" disabled>Download Excel</button>
+      <!-- Search bar -->
+      <div class="search-bar">
+        <input id="search" type="search" placeholder="Search products, codes, wordings…" autocomplete="off" disabled />
+        <button class="search-btn" title="Search">🔍</button>
+      </div>
+
+      <!-- Right-side actions -->
+      <div class="topbar-actions">
+        <button class="nav-btn" id="btnShipments" disabled>
+          <small>History</small>
+          <b>📋 Shipments</b>
+        </button>
+        <button class="nav-btn" id="btnExportExcel" disabled>
+          <small>Export</small>
+          <b>📊 Excel</b>
+        </button>
+        <button class="nav-btn" id="btnSave" disabled>
+          <small>Changes</small>
+          <b>💾 Save</b>
+        </button>
+
+        <!-- Auth zone -->
+        <div class="auth-zone">
+          <input id="authUser" type="text" placeholder="username" autocomplete="username" />
+          <input id="authPass" type="password" placeholder="password" autocomplete="current-password" />
+          <button class="nav-btn accent" id="btnLogin">Login</button>
+          <button class="nav-btn" id="btnLogout" style="display:none">Logout</button>
+          <span class="auth-status" id="authStatus">Viewer</span>
+        </div>
+      </div>
     </div>
 
-    <input id="filePicker" type="file" accept="application/json" hidden />
+    <!-- Sub-nav: Add buttons + status -->
+    <div class="topbar-sub">
+      <button class="sub-link" id="btnAddProduct" disabled>+ Add Product</button>
+      <button class="sub-link" id="btnAddCategory" disabled>+ Add Category</button>
+      <span style="color:#8a96a0;font-size:12px;margin-left:auto" id="fileNote">Loading…</span>
+
+      <!-- Hidden folder mode / file picker (kept for compatibility) -->
+      <button id="btnOpenFolder" style="display:none">Use folder…</button>
+      <span id="folderStatus" style="display:none"></span>
+      <button id="btnLoad" style="display:none">Load JSON</button>
+      <input id="filePicker" type="file" accept="application/json" hidden />
+    </div>
   </header>
 
-  <main class="layout">
+  <!-- ===== MAIN 3-COLUMN LAYOUT ===== -->
+  <div class="layout">
+
+    <!-- LEFT: Category Sidebar -->
     <aside class="sidebar">
-      <div class="h">Categories</div>
-        <input type="text" id="catSearch" class="search" placeholder="Filter categories..." style="width: 100%; margin-bottom: 10px; padding: 6px 10px; font-size: 13px;">
+      <div class="sidebar-title">☰ Categories</div>
+      <div class="cat-search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input type="text" id="catSearch" placeholder="Filter categories…" />
       </div>
       <div id="categoryList" class="categoryList"></div>
-      <div class="smallNote">
-        Images are loaded from <b>media/</b> by filename (example: <code>tiramisu.jpg</code>).
+      <div class="sidebar-note">
+        Images are served from <code>media/</code> by filename (e.g. <code>tiramisu.jpg</code>).
       </div>
     </aside>
 
+    <!-- MIDDLE: Product grid -->
     <section class="content">
-      <div id="filterLine" class="filterLine"></div>
-
-      <section class="shipmentCartPanel" id="shipmentCartPanel">
-        <div class="shipmentCartHead">
-          <div>
-            <div class="shipmentCartTitle">Shipment cart</div>
-            <div class="smallNote" id="shipmentCartSummary">No products in cart.</div>
-          </div>
-          <div class="shipmentCartActionsTop">
-            <button class="btn ghost" type="button" id="btnClearCart">Clear cart</button>
-          </div>
-        </div>
-
-        <div class="cartOverview" id="cartOverview"></div>
-        <div id="shipmentCartList" class="shipmentCartList"></div>
-
-        <div class="shipmentCartForm">
-          <div class="grid2">
-            <label class="row">
-              <span>Date</span>
-              <input type="text" id="cartShipDate" placeholder="DD/MM/YYYY" inputmode="numeric">
-            </label>
-            <label class="row cartCheckRow">
-              <span>Options</span>
-              <label class="checkItem"><input type="checkbox" id="cartExtraUE"> Extra UE / DHL List</label>
-            </label>
-          </div>
-          <div class="grid2">
-            <label class="row">
-              <span>Destination</span>
-              <input id="cartDestination" type="text" />
-            </label>
-            <label class="row">
-              <span>Recipient</span>
-              <input id="cartRecipient" type="text" />
-            </label>
-          </div>
-          <div class="grid2">
-            <label class="row">
-              <span>Reference</span>
-              <input id="cartReference" type="text" />
-            </label>
-            <label class="row">
-              <span>Notes</span>
-              <input id="cartNotes" type="text" />
-            </label>
-          </div>
-          <div class="rowBtns">
-            <button class="btn" type="button" id="btnCreateShipment">Create shipment</button>
-            <button class="btn ghost" type="button" id="btnCartPdf">PDF</button>
-            <button class="btn ghost" type="button" id="btnCartExcel">Excel</button>
-            <button class="btn ghost" type="button" id="btnCartDhl">DHL List</button>
-          </div>
-        </div>
-      </section>
-
+      <div class="content-header">
+        <div id="filterLine" class="filter-breadcrumb">All products</div>
+        <div class="results-count" id="resultsCount"></div>
+      </div>
       <div id="productGrid" class="productGrid"></div>
       <div id="empty" class="empty" hidden>No products found.</div>
     </section>
-  </main>
+
+    <!-- RIGHT: Shipment Cart -->
+    <aside class="cart-sidebar">
+      <div class="cart-header">
+        <span class="cart-header-icon">🛒</span>
+        Shipment Cart
+        <span class="cart-badge" id="cartBadge">0</span>
+      </div>
+
+      <div class="cart-overview" id="cartOverview">
+        <div class="cart-stats">
+          <div class="cart-stat"><b id="statLines">0</b><span>lines</span></div>
+          <div class="cart-stat"><b id="statUnits">0</b><span>units</span></div>
+          <div class="cart-stat"><b id="statCT">0</b><span>CT</span></div>
+        </div>
+      </div>
+
+      <div class="cart-items" id="shipmentCartList">
+        <div class="cart-empty">
+          <span class="cart-empty-icon">🛒</span>
+          Cart empty.<br>Use <b>Add to cart</b> on a product card.
+        </div>
+      </div>
+
+      <!-- Cart form -->
+      <div class="cart-form">
+        <div class="cart-form-title">Shipment Details</div>
+        <div class="grid2">
+          <label class="row">
+            <span>Date</span>
+            <input type="text" id="cartShipDate" placeholder="DD/MM/YYYY" inputmode="numeric">
+          </label>
+          <label class="row cartCheckRow">
+            <span>Options</span>
+            <label class="checkItem"><input type="checkbox" id="cartExtraUE"> Extra UE / DHL</label>
+          </label>
+        </div>
+        <div class="grid2">
+          <label class="row">
+            <span>Destination</span>
+            <input id="cartDestination" type="text" placeholder="Country / city" />
+          </label>
+          <label class="row">
+            <span>Recipient</span>
+            <input id="cartRecipient" type="text" placeholder="Name / dept" />
+          </label>
+        </div>
+        <div class="grid2">
+          <label class="row">
+            <span>Reference</span>
+            <input id="cartReference" type="text" placeholder="Tracking / ref" />
+          </label>
+          <label class="row">
+            <span>Notes</span>
+            <input id="cartNotes" type="text" placeholder="Optional notes" />
+          </label>
+        </div>
+        <button class="btn" type="button" id="btnCreateShipment">✅ Create Shipment</button>
+        <div class="cart-action-row">
+          <button class="btn ghost" type="button" id="btnCartPdf">📄 PDF</button>
+          <button class="btn ghost" type="button" id="btnCartExcel">📊 Excel</button>
+          <button class="btn ghost" type="button" id="btnCartDhl">🚚 DHL</button>
+          <button class="btn ghost danger" type="button" id="btnClearCart">🗑 Clear</button>
+        </div>
+
+        <!-- Summary note -->
+        <div class="smallNote" id="shipmentCartSummary" style="margin-top:6px;">No products in cart.</div>
+      </div>
+
+      <!-- Keep old IDs for JS compatibility -->
+      <div id="shipmentCartPanel" style="display:none"></div>
+      <div id="cartOverviewOld" style="display:none"></div>
+    </aside>
+  </div>
+
+  <!-- ===================== DIALOGS ===================== -->
 
   <!-- Category dialog -->
   <dialog class="dlg" id="catDlg">
     <form method="dialog" class="dlgBody" id="catForm">
       <div class="dlgTitle" id="catTitle">Category</div>
-
       <label class="row">
         <span>Name</span>
-        <input id="catName" required maxlength="60" />
+        <input id="catName" required maxlength="60" placeholder="Category name" />
       </label>
-
       <div class="dlgBtns">
         <button class="btn ghost" type="button" id="btnCatCancel">Cancel</button>
-        <button class="btn" type="submit" id="btnCatSave">Save</button>
+        <button class="btn primary" type="submit" id="btnCatSave">Save Category</button>
       </div>
     </form>
   </dialog>
@@ -142,79 +191,62 @@
   <dialog class="dlg" id="prodDlg">
     <form method="dialog" class="dlgBody wide" id="prodForm">
       <div class="dlgTitle" id="prodTitle">Product</div>
-
       <div class="grid2">
         <label class="row">
-          <span>Product Name</span>
-          <input id="prodName" type="text" required />
+          <span>Product Name *</span>
+          <input id="prodName" type="text" required placeholder="e.g. Mix Max Cioccolato" />
         </label>
-
         <label class="row">
-          <span>Categories (tick all that apply)</span>
+          <span>Categories (select all that apply)</span>
           <div id="prodCategoriesBox" class="checkList"></div>
         </label>
       </div>
-
       <div class="grid2">
         <label class="row">
           <span>Wordings (one per line)</span>
-          <textarea id="prodWordings" rows="6"></textarea>
+          <textarea id="prodWordings" rows="5" placeholder="Alternative product names / descriptions"></textarea>
         </label>
-
         <label class="row">
           <span>Codes / IDs (one per line)</span>
-          <textarea id="prodCodes" rows="6"></textarea>
+          <textarea id="prodCodes" rows="5" placeholder="Barcodes, SKUs, internal codes"></textarea>
         </label>
       </div>
-
       <label class="row">
         <span>Notes (optional)</span>
-        <textarea id="prodNotes" rows="3"></textarea>
+        <textarea id="prodNotes" rows="2" placeholder="Internal notes, storage info, etc."></textarea>
       </label>
-
       <div class="imgRow">
         <div class="imgBox" id="imgPreview">No image</div>
-
         <div class="imgSide">
           <label class="row">
             <span>Image filename (in media/)</span>
             <input id="prodImageFileName" placeholder="e.g. tiramisu.jpg" />
           </label>
-
           <div class="rowBtns">
-            <button class="btn" type="button" id="btnPickImage">Pick image…</button>
-            <button class="btn ghost" type="button" id="btnClearImage">Clear</button>
+            <button class="btn" type="button" id="btnPickImage">📁 Pick image…</button>
+            <button class="btn ghost" type="button" id="btnClearImage">✕ Clear</button>
           </div>
-          
           <label class="row">
-            <span>CT Size (Packs per Carton)</span>
+            <span>CT Size (packs per carton)</span>
             <input id="prodCtSize" type="number" min="1" step="1" placeholder="e.g. 12" />
           </label>
-
           <label class="row">
-            <span>Customs code</span>
+            <span>Customs Code</span>
             <input id="prodCustomsCode" type="text" placeholder="e.g. 19059070" />
           </label>
-
           <label class="row">
             <span>Unit weight (kg)</span>
-            <input id="prodUnitWeightKg" type="number" min="0" step="0.001" placeholder="e.g. 0.25" />
+            <input id="prodUnitWeightKg" type="number" min="0" step="0.001" placeholder="e.g. 0.250" />
           </label>
-
           <input id="imgFilePicker" type="file" accept="image/*" hidden />
-
-          <div class="smallNote" id="imgHint">
-            Folder mode: picking an image will copy it into <b>media/</b>. Otherwise you’ll need to copy it manually.
-          </div>
+          <div class="smallNote" id="imgHint">Pick an image or enter the filename manually.</div>
         </div>
       </div>
-
       <div class="dlgBtns dlgBtnsSplit">
-        <button class="btn ghost" type="button" id="btnProdDuplicate">Duplicate</button>
-
+        <button class="btn ghost" type="button" id="btnProdDuplicate">⧉ Duplicate</button>
         <div class="dlgBtnsRight">
           <button class="btn ghost" type="button" id="btnProdCancel">Cancel</button>
-          <button class="btn" type="submit" id="btnProdSave">Save</button>
+          <button class="btn primary" type="submit" id="btnProdSave">Save Product</button>
         </div>
       </div>
     </form>
@@ -223,48 +255,41 @@
   <!-- Stock dialog -->
   <dialog class="dlg" id="stockDlg">
     <form method="dialog" class="dlgBody wide" id="stockForm">
-      <div class="dlgTitle">Adjust Stock</div>
+      <div class="dlgTitle">📦 Adjust Stock</div>
       <div class="smallNote" id="stockHeader"></div>
-
       <div class="stockGrid">
         <div class="panel">
-          <div class="panelTitle">Expiry lots</div>
+          <div class="panelTitle">Current Lots</div>
           <div id="lotList"></div>
         </div>
-
         <div class="panel">
           <div class="panelTitle">Add / Withdraw</div>
-
           <label class="row">
             <span>Expiry date (DD/MM/YYYY)</span>
             <input type="text" id="stockExpiry" placeholder="DD/MM/YYYY" inputmode="numeric">
-<label style="display:flex; align-items:center; gap:6px; margin-top:-6px;">
-  <input type="checkbox" id="stockUnknownExpiry">
-  Unknown expiry date
-</label>
+            <label class="checkItem" style="margin-top:4px;">
+              <input type="checkbox" id="stockUnknownExpiry" style="width:auto">
+              Unknown expiry date
+            </label>
           </label>
-
           <label class="row">
-    		<span>Quantity</span>
-    		<div style="display:flex; gap:10px;">
-       		 <input id="stockQty" type="number" min="1" step="1" />
-        		<select id="stockUnitSelector">
-            		<option value="units">Units</option>
-            		<option value="ct">Cartons (CT)</option>
-        		</select>
-    		</div>
-	</label>
-
-          <div class="rowBtns">
-    <button class="btn" type="button" id="btnStockAdd">Add</button>
-    <button class="btn danger" type="button" id="btnStockWithdraw">Withdraw</button>
-    <button class="btn order" type="button" id="btnStockOrder">Order</button>
-</div>
-
+            <span>Quantity</span>
+            <div style="display:flex;gap:8px;">
+              <input id="stockQty" type="number" min="1" step="1" style="flex:1" />
+              <select id="stockUnitSelector" style="width:auto;flex-shrink:0;">
+                <option value="units">Units</option>
+                <option value="ct">Cartons (CT)</option>
+              </select>
+            </div>
+          </label>
+          <div class="rowBtns" style="margin-bottom:8px;">
+            <button class="btn primary" type="button" id="btnStockAdd">+ Add</button>
+            <button class="btn danger" type="button" id="btnStockWithdraw">− Withdraw</button>
+            <button class="btn order" type="button" id="btnStockOrder">📋 Order</button>
+          </div>
           <div class="smallNote" id="stockMsg"></div>
         </div>
       </div>
-
       <div class="dlgBtns">
         <button class="btn ghost" value="cancel" formnovalidate>Close</button>
       </div>
@@ -274,9 +299,8 @@
   <!-- More info dialog -->
   <dialog class="dlg" id="infoDlg">
     <form method="dialog" class="dlgBody wide" id="infoForm">
-      <div class="dlgTitle" id="infoTitle">More info</div>
+      <div class="dlgTitle" id="infoTitle">ℹ More info</div>
       <div class="smallNote" id="infoSub"></div>
-
       <div class="miscGrid">
         <div>
           <div class="miscTitle">Wordings</div>
@@ -287,60 +311,12 @@
           <pre class="miscBox" id="infoCodes"></pre>
         </div>
         <div class="lotsWrap">
-          <div class="miscTitle">Expiry lots</div>
+          <div class="miscTitle">Expiry Lots</div>
           <div class="lotsBox" id="infoLots"></div>
         </div>
       </div>
-
       <div class="dlgBtns">
         <button class="btn ghost" value="cancel" formnovalidate>Close</button>
-      </div>
-    </form>
-  </dialog>
-
-
-  <!-- Shipment dialog -->
-  <dialog class="dlg" id="shipDlg">
-    <form method="dialog" class="dlgBody wide" id="shipForm">
-      <div class="dlgTitle" id="shipTitle">Register shipment</div>
-      <div class="grid2">
-        <label class="row">
-          <span>Product</span>
-          <input id="shipProductName" type="text" disabled />
-        </label>
-        <label class="row">
-          <span>Date</span>
-          <input id="shipDate" type="text" placeholder="DD/MM/YYYY" inputmode="numeric" />
-        </label>
-      </div>
-      <div class="grid2">
-        <label class="row">
-          <span>Quantity</span>
-          <input id="shipQty" type="number" min="1" step="1" required />
-        </label>
-        <label class="row">
-          <span>Destination</span>
-          <input id="shipDestination" type="text" placeholder="Customer / city / office" />
-        </label>
-      </div>
-      <div class="grid2">
-        <label class="row">
-          <span>Recipient</span>
-          <input id="shipRecipient" type="text" placeholder="Name / department" />
-        </label>
-        <label class="row">
-          <span>Reference</span>
-          <input id="shipReference" type="text" placeholder="Courier / tracking / internal ref" />
-        </label>
-      </div>
-      <label class="row">
-        <span>Notes</span>
-        <textarea id="shipNotes" rows="3"></textarea>
-      </label>
-      <div class="smallNote" id="shipAvailableNote"></div>
-      <div class="dlgBtns">
-        <button class="btn ghost" type="button" id="btnShipCancel">Cancel</button>
-        <button class="btn" type="submit" id="btnShipSave">Register shipment</button>
       </div>
     </form>
   </dialog>
@@ -348,16 +324,16 @@
   <!-- Shipment history dialog -->
   <dialog class="dlg" id="shipHistDlg">
     <form method="dialog" class="dlgBody wide shipHistBody" id="shipHistForm">
-      <div class="dlgTitle">Shipping history</div>
+      <div class="dlgTitle">📋 Shipping History</div>
       <div class="shipHistTools">
-        <input class="search" id="shipHistSearch" type="search" placeholder="Search product / destination / recipient…" />
-        <button class="btn" type="button" id="btnShipExport">Export Excel</button>
+        <input class="search" id="shipHistSearch" type="search" placeholder="Search product / destination / recipient…" style="min-width:240px;flex:1;" />
+        <button class="btn" type="button" id="btnShipExport">📊 Export Excel</button>
       </div>
       <div class="shipTableWrap">
         <table class="shipTable">
           <thead>
             <tr>
-              <th>Date</th><th>Items</th><th>Destination</th><th>Recipient</th><th>Reference</th><th>Notes</th><th>DHL</th><th></th>
+              <th>Date</th><th>Items</th><th>Destination</th><th>Recipient</th><th>Reference</th><th>Notes</th><th>DHL</th><th>Actions</th>
             </tr>
           </thead>
           <tbody id="shipHistBody"></tbody>
@@ -370,45 +346,68 @@
     </form>
   </dialog>
 
+  <!-- (unused single-ship dialog kept for JS compat) -->
+  <dialog class="dlg" id="shipDlg">
+    <form method="dialog" class="dlgBody wide" id="shipForm">
+      <div class="dlgTitle" id="shipTitle">Register shipment</div>
+      <div class="grid2">
+        <label class="row"><span>Product</span><input id="shipProductName" type="text" disabled /></label>
+        <label class="row"><span>Date</span><input id="shipDate" type="text" placeholder="DD/MM/YYYY" inputmode="numeric" /></label>
+      </div>
+      <div class="grid2">
+        <label class="row"><span>Quantity</span><input id="shipQty" type="number" min="1" step="1" required /></label>
+        <label class="row"><span>Destination</span><input id="shipDestination" type="text" /></label>
+      </div>
+      <div class="grid2">
+        <label class="row"><span>Recipient</span><input id="shipRecipient" type="text" /></label>
+        <label class="row"><span>Reference</span><input id="shipReference" type="text" /></label>
+      </div>
+      <label class="row"><span>Notes</span><textarea id="shipNotes" rows="3"></textarea></label>
+      <div class="smallNote" id="shipAvailableNote"></div>
+      <div class="dlgBtns">
+        <button class="btn ghost" type="button" id="btnShipCancel">Cancel</button>
+        <button class="btn primary" type="submit" id="btnShipSave">Register shipment</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Product card template -->
   <template id="cardTpl">
     <div class="card">
       <div class="thumb">
         <img class="thumbImg" alt="" />
-        <div class="thumbEmpty">No image</div>
+        <div class="thumbEmpty"></div>
       </div>
-
       <div class="cardBody">
         <div class="cardTop">
           <div class="pName"></div>
-          <div class="pill pCat"></div>
+          <div class="pCat"></div>
         </div>
-
         <div class="stockLine">
           <div class="stockTotal"></div>
-          <div id="ctPillContainer" class="ct-container"></div> <div class="stockLots" hidden></div>
+          <div id="ctPillContainer" class="ct-container"></div>
+          <div class="stockLots" hidden></div>
         </div>
-
         <div class="btnRow">
-          <button class="btn small ghost" data-act="info">More info…</button>
-          <button class="btn small" data-act="stock">Stock…</button>
-          <button class="btn small ghost" data-act="edit">Edit</button>
-          <button class="btn small ghost" data-act="ship">Add to cart</button>
-          <button class="btn small ghost danger" data-act="del">Delete</button>
+          <button class="btn small ghost" data-act="info">ℹ Info</button>
+          <button class="btn small primary" data-act="stock">📦 Stock</button>
+          <button class="btn small ghost" data-act="edit">✏ Edit</button>
+          <button class="btn small ghost" data-act="ship">🛒 Cart</button>
+          <button class="btn small ghost danger" data-act="del">🗑</button>
         </div>
       </div>
     </div>
   </template>
 
-  
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-  window.SUPABASE_URL = "https://ocsctsikfeklqqsuicls.supabase.co";
-  window.SUPABASE_ANON_KEY = "sb_publishable_FPoftaXY3jc_1A_HPVHFAA_9Bl6Kj1i";
-  window.ADMIN_EMAIL = "omaggi@campionature.local";
-</script>
-
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-<script src="app.js" defer></script>
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    window.SUPABASE_URL = "https://ocsctsikfeklqqsuicls.supabase.co";
+    window.SUPABASE_ANON_KEY = "sb_publishable_FPoftaXY3jc_1A_HPVHFAA_9Bl6Kj1i";
+    window.ADMIN_EMAIL = "omaggi@campionature.local";
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="app.js" defer></script>
 </body>
 </html>
