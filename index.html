@@ -1,27 +1,176 @@
 <!doctype html>
-<html>
+<html lang="it">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Campionature</title>
-<link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Catalogo Campionature</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="title">Catalogo Campionature</div>
+      <div class="sub">Carrello, lotti, spedizioni e autosave</div>
+    </div>
 
-<header class="topbar">
-<input id="search" placeholder="Cerca prodotto">
-<button id="openCart">Carrello (<span id="cartCount">0</span>)</button>
-</header>
+    <div class="toptools">
+      <input id="search" class="search" type="search" placeholder="Cerca nome, wording, codice...">
+      <button class="btn ghost" id="btnUseFolder" type="button">Use folder (autosave)</button>
+      <button class="btn ghost" id="btnLoadJson" type="button">Load JSON</button>
+      <button class="btn ghost" id="btnDownloadJson" type="button">Download JSON</button>
+      <button class="btn" id="btnHistory" type="button">Storico spedizioni</button>
+    </div>
 
-<div class="layout">
-<div id="productGrid"></div>
+    <div class="statusline">
+      <span id="saveStatus" class="smallNote">Autosave locale attivo</span>
+      <span id="dataStatus" class="smallNote">Nessun file cartella collegato</span>
+    </div>
 
-<div class="cart" id="cart">
-<h3>Carrello</h3>
-<div id="cartList"></div>
-</div>
-</div>
+    <input id="filePicker" type="file" accept="application/json" hidden>
+  </header>
 
-<script src="app.js"></script>
+  <main class="layout">
+    <aside class="leftPane">
+      <section class="panel">
+        <div class="panelHead">
+          <div class="panelTitle">Categorie</div>
+        </div>
+        <input id="catSearch" class="search" type="search" placeholder="Filtra categorie...">
+        <div id="categoryList" class="categoryList"></div>
+      </section>
+    </aside>
+
+    <section class="centerPane">
+      <section class="panel productsPanel">
+        <div id="filterLine" class="filterLine"></div>
+        <div id="productGrid" class="productGrid"></div>
+        <div id="emptyProducts" class="empty" hidden>Nessun prodotto trovato.</div>
+      </section>
+    </section>
+
+    <aside class="rightPane">
+      <section class="panel cartPanel" id="cartPanel">
+        <div class="cartTop">
+          <div>
+            <div class="panelTitle">Carrello spedizione</div>
+            <div id="cartSummaryTop" class="smallNote">Nessun prodotto selezionato</div>
+          </div>
+          <button class="btn small onlyMobile" id="btnCloseCart" type="button">Chiudi</button>
+        </div>
+
+        <div id="cartList" class="cartList"></div>
+
+        <div class="cartMeta">
+          <label class="field">
+            <span>Data</span>
+            <input id="shipDate" type="date">
+          </label>
+          <label class="field">
+            <span>Destinazione</span>
+            <input id="shipDestination" type="text" placeholder="Cliente / città / ufficio">
+          </label>
+          <label class="field">
+            <span>Destinatario</span>
+            <input id="shipRecipient" type="text" placeholder="Nome / reparto">
+          </label>
+          <label class="field">
+            <span>Riferimento</span>
+            <input id="shipReference" type="text" placeholder="DHL / tracking / note interne">
+          </label>
+          <label class="field fieldFull">
+            <span>Note</span>
+            <textarea id="shipNotes" rows="3" placeholder="Note opzionali"></textarea>
+          </label>
+          <label class="checkLine fieldFull">
+            <input id="shipExtraUE" type="checkbox">
+            <span>Extra UE / DHL List</span>
+          </label>
+        </div>
+
+        <div class="cartActions">
+          <button class="btn ghost" id="btnClearCart" type="button">Svuota</button>
+          <button class="btn" id="btnCreateShipment" type="button">Crea spedizione</button>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <button id="mobileCartFab" class="mobileCartFab" type="button">
+    Carrello <span id="mobileCartCount" class="fabCount">0</span>
+  </button>
+
+  <dialog id="historyDlg" class="dlg">
+    <div class="dlgBody">
+      <div class="dlgTop">
+        <div class="panelTitle">Storico spedizioni</div>
+        <button class="btn ghost" id="btnCloseHistory" type="button">Chiudi</button>
+      </div>
+      <div class="historyTools">
+        <input id="historySearch" class="search" type="search" placeholder="Cerca riferimento, destinazione, prodotto...">
+      </div>
+      <div id="historyList" class="historyList"></div>
+    </div>
+  </dialog>
+
+  <template id="productTpl">
+    <article class="card">
+      <div class="thumb">
+        <img class="thumbImg" alt="">
+        <div class="thumbEmpty">No image</div>
+      </div>
+      <div class="cardBody">
+        <div class="cardName"></div>
+        <div class="cardCat"></div>
+        <div class="metaRow">
+          <span class="pill stockPill"></span>
+          <span class="pill ctPill"></span>
+        </div>
+        <div class="metaRow">
+          <span class="smallNote codesLine"></span>
+        </div>
+        <button class="btn addBtn" type="button">Add to cart</button>
+      </div>
+    </article>
+  </template>
+
+  <template id="cartRowTpl">
+    <div class="cartRow">
+      <div class="cartRowTop">
+        <div>
+          <div class="cartRowName"></div>
+          <div class="smallNote cartRowSub"></div>
+        </div>
+        <button class="iconBtn removeBtn" type="button">✕</button>
+      </div>
+
+      <div class="cartRowGrid">
+        <label class="field">
+          <span>Lotto</span>
+          <select class="lotSel"></select>
+        </label>
+        <label class="field">
+          <span>Modalità</span>
+          <select class="modeSel">
+            <option value="units">Unità</option>
+            <option value="ct">Scatole / CT</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Qtà</span>
+          <input class="qtyInput" type="number" min="1" step="1">
+        </label>
+      </div>
+
+      <div class="cartFoot">
+        <span class="availability"></span>
+        <div class="stepper">
+          <button class="stepMinus" type="button">−</button>
+          <button class="stepPlus" type="button">+</button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
 </body>
 </html>
