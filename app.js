@@ -247,6 +247,19 @@ async function portalSaveCatalogue() {
   setDirty(false);
   alert("Saved online ✅");
 }
+
+async function portalSaveCatalogueSilent() {
+  if (!isAdmin() || !supabaseClient || !state) return false;
+  const { error } = await supabaseClient
+    .from("catalogue")
+    .upsert({ id: CATALOGUE_ROW_ID, data: state, updated_at: new Date().toISOString() }, { onConflict: "id" });
+  if (error) {
+    console.error("Silent save failed:", error.message);
+    return false;
+  }
+  setDirty(false);
+  return true;
+}
 /* ------------------------------------------------------------------------------- */
 
 let state = null;
@@ -666,6 +679,14 @@ function setDirty(isDirty) {
   if (isDirty && fs.folderHandle) {
     if (els.folderStatus) els.folderStatus.textContent = "Folder mode: ON (saving…)";
     requestAutosave();
+  }
+
+  // autosave online in Supabase mode
+  if (isDirty && !fs.folderHandle && supabaseClient && isAdmin()) {
+    if (autosaveTimer) clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => {
+      portalSaveCatalogueSilent();
+    }, 700);
   }
 }
 
@@ -2091,6 +2112,7 @@ function deleteShipment(id) {
   if (!confirm('Delete this shipment record?')) return;
   state.shipments = (state.shipments || []).filter(x => x.id !== id);
   setDirty(true);
+  portalSaveCatalogueSilent();
   renderShipmentHistory();
 }
 
@@ -2356,40 +2378,30 @@ function renderShipmentCart() {
     const unitOptions = [`<option value="units" ${item.unitMode !== "ct" ? 'selected' : ''}>Units</option>`];
     if (p.ctSize && p.ctSize > 0) unitOptions.push(`<option value="ct" ${item.unitMode === "ct" ? 'selected' : ''}>Boxes / CT</option>`);
 
-    const imgFile = (p.imageFileName || '').trim();
-    const cartThumb = imgFile
-      ? `<div class="shipmentCartThumb"><img src="media/${escapeHtml(imgFile)}" alt="${escapeHtml(item.productName)}" onerror="this.parentElement.innerHTML='<div class=&quot;shipmentCartThumbEmpty&quot;>No image</div>'"></div>`
-      : `<div class="shipmentCartThumb"><div class="shipmentCartThumbEmpty">No image</div></div>`;
-
     row.innerHTML = `
-      <div class="shipmentCartItemWrap">
-        ${cartThumb}
-        <div class="shipmentCartItemMain">
-          <div class="shipmentCartItemHead">
-            <div class="shipmentCartItemName">${escapeHtml(item.productName)}</div>
-            <button class="btn small ghost danger" type="button" data-cart-act="remove">Remove</button>
-          </div>
-          <div class="shipmentCartGrid">
-            <label class="row">
-              <span>Lot</span>
-              <select data-cart-act="lot">${buildLotOptionsHtml(p, item.lotExpiry)}</select>
-            </label>
-            <label class="row">
-              <span>Mode</span>
-              <select data-cart-act="mode">${unitOptions.join('')}</select>
-            </label>
-            <label class="row">
-              <span>Qty</span>
-              <input data-cart-act="qty" type="number" min="1" step="1" value="${Math.max(1, Math.trunc(Number(item.qty)||1))}">
-            </label>
-            <div class="cartMiniBtns">
-              <button class="btn small ghost" type="button" data-cart-act="minus">-</button>
-              <button class="btn small" type="button" data-cart-act="plus">+</button>
-            </div>
-          </div>
-          <div class="shipmentCartMeta" data-cart-meta></div>
+      <div class="shipmentCartItemHead">
+        <div class="shipmentCartItemName">${escapeHtml(item.productName)}</div>
+        <button class="btn small ghost danger" type="button" data-cart-act="remove">Remove</button>
+      </div>
+      <div class="shipmentCartGrid">
+        <label class="row">
+          <span>Lot</span>
+          <select data-cart-act="lot">${buildLotOptionsHtml(p, item.lotExpiry)}</select>
+        </label>
+        <label class="row">
+          <span>Mode</span>
+          <select data-cart-act="mode">${unitOptions.join('')}</select>
+        </label>
+        <label class="row">
+          <span>Quantity</span>
+          <input data-cart-act="qty" type="number" min="1" step="1" value="${Math.max(1, Math.trunc(Number(item.qty)||1))}">
+        </label>
+        <div class="cartMiniBtns">
+          <button class="btn small ghost" type="button" data-cart-act="minus">-</button>
+          <button class="btn small" type="button" data-cart-act="plus">+</button>
         </div>
       </div>
+      <div class="shipmentCartMeta" data-cart-meta></div>
     `;
 
     const lotSel = row.querySelector('[data-cart-act="lot"]');
@@ -2584,9 +2596,9 @@ function renderShipmentHistory() {
         <td>${escapeHtml(s.reference || '')}</td>
         <td>${escapeHtml(s.notes || '')}</td>
         <td>${s.extraUE ? 'Yes' : 'No'}</td>
-        <td class="shipDel">${isAdmin() ? '<button class="btn small ghost danger" type="button">Del</button>' : ''}</td>`;
-      const btn = tr.querySelector('button');
-      if (btn) btn.addEventListener('click', () => deleteShipment(s.id));
+        <td class="shipDel">${isAdmin() ? '<button class="btn small ghost" data-act="pdf" type="button">PDF</button> <button class="btn small ghost danger" data-act="del" type="button">Del</button>' : '<button class="btn small ghost" data-act="pdf" type="button">PDF</button>'}</td>`;
+      tr.querySelector('[data-act="pdf"]')?.addEventListener('click', () => exportShipmentDraftPDF(s));
+      tr.querySelector('[data-act="del"]')?.addEventListener('click', () => deleteShipment(s.id));
       els.shipHistBody.appendChild(tr);
     }
   }
@@ -2655,6 +2667,32 @@ function exportCatalogueExcel() {
   XLSX.writeFile(wb, `campionature_${todayISO()}.xlsx`);
 }
 
+function shipmentSequenceForDate(dateISO, excludeShipmentId = "") {
+  const key = String(dateISO || "").slice(0, 10);
+  const sameDate = normalizeShipmentRecords(state?.shipments).filter(s => String(s.date || "").slice(0, 10) === key && s.id !== excludeShipmentId);
+  return sameDate.length + 1;
+}
+
+function compactDateYYMMDD(dateISO) {
+  const d = String(dateISO || todayISO()).slice(0, 10);
+  const [y, m, day] = d.split('-');
+  return `${String(y || '').slice(-2)}${m || ''}${day || ''}`;
+}
+
+function sanitizeFilePart(value) {
+  return String(value || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60) || 'Cliente';
+}
+
+function shipmentFileBaseName(draft) {
+  const seq = String(shipmentSequenceForDate(draft.date, draft.id)).padStart(3, '0');
+  const customer = sanitizeFilePart(draft.recipient || draft.destination || 'Cliente');
+  return `Campionatura_${compactDateYYMMDD(draft.date)}-${seq}_${customer}`;
+}
+
 function exportShipmentDraftExcel(draft) {
   if (!draft || !draft.items?.length) { alert("Cart is empty."); return; }
   if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
@@ -2674,7 +2712,7 @@ function exportShipmentDraftExcel(draft) {
     ExtraUE: draft.extraUE ? 'Yes' : 'No'
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Shipment');
-  XLSX.writeFile(wb, `${draft.id}.xlsx`);
+  XLSX.writeFile(wb, `${shipmentFileBaseName(draft)}.xlsx`);
 }
 
 function exportShipmentDraftPDF(draft) {
@@ -2684,7 +2722,7 @@ function exportShipmentDraftPDF(draft) {
   const doc = new jspdfNs.jsPDF();
   let y = 16;
   doc.setFontSize(16);
-  doc.text(`Shipment ${draft.id}`, 14, y); y += 8;
+  doc.text(`Shipment ${shipmentFileBaseName(draft)}`, 14, y); y += 8;
   doc.setFontSize(11);
   const head = [
     `Date: ${draft.date}`,
@@ -2708,7 +2746,7 @@ function exportShipmentDraftPDF(draft) {
     });
     y += 2;
   });
-  doc.save(`${draft.id}.pdf`);
+  doc.save(`${shipmentFileBaseName(draft)}.pdf`);
 }
 
 function exportDHLList(draft) {
@@ -2726,7 +2764,7 @@ function exportDHLList(draft) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${draft.id}_DHL_List.txt`;
+  a.download = `${shipmentFileBaseName(draft)}_DHL_List.txt`;
   document.body.appendChild(a);
   a.click();
   a.remove();
