@@ -109,11 +109,14 @@ Object.assign(els, {
 
 
 // Stock unit selector (Units vs CTs)
-stockUnitSelector.id = "stockUnitSelector";
-stockUnitSelector.innerHTML = `
+const stockUnitSelector = $("#stockUnitSelector");
+if (stockUnitSelector) {
+  stockUnitSelector.id = "stockUnitSelector";
+  stockUnitSelector.innerHTML = `
     <option value="units">Units</option>
     <option value="ct">Cartons (CT)</option>
-`;
+  `;
+}
 
 
 
@@ -2750,3 +2753,425 @@ function exportDHLList(draft) {
   }
   window.sb = supabaseClient;
 })();
+
+
+/* ==================== Live sync + shipment history upgrade ==================== */
+let realtimeChannel = null;
+let onlineAutosaveTimer = null;
+let onlineAutosaveInFlight = false;
+let onlineAutosaveQueued = false;
+let suppressRemoteApplyUntil = 0;
+let editingShipmentId = null;
+let editingShipmentCreatedAt = null;
+let currentRemoteUpdatedAt = "";
+
+function setRealtimeStatus(text, cls = "") {
+  const el = document.getElementById("realtimeStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.className = `note realtimeStatus ${cls}`.trim();
+}
+
+function preserveCartFormState() {
+  return {
+    cartShipDate: els.cartShipDate?.value || "",
+    cartDestination: els.cartDestination?.value || "",
+    cartRecipient: els.cartRecipient?.value || "",
+    cartReference: els.cartReference?.value || "",
+    cartNotes: els.cartNotes?.value || "",
+    cartExtraUE: !!els.cartExtraUE?.checked,
+    shipmentCart: JSON.parse(JSON.stringify(shipmentCart || [])),
+    editingShipmentId,
+    editingShipmentCreatedAt,
+  };
+}
+
+function restoreCartFormState(snapshot) {
+  if (!snapshot) return;
+  if (els.cartShipDate) els.cartShipDate.value = snapshot.cartShipDate || "";
+  if (els.cartDestination) els.cartDestination.value = snapshot.cartDestination || "";
+  if (els.cartRecipient) els.cartRecipient.value = snapshot.cartRecipient || "";
+  if (els.cartReference) els.cartReference.value = snapshot.cartReference || "";
+  if (els.cartNotes) els.cartNotes.value = snapshot.cartNotes || "";
+  if (els.cartExtraUE) els.cartExtraUE.checked = !!snapshot.cartExtraUE;
+  shipmentCart = Array.isArray(snapshot.shipmentCart) ? snapshot.shipmentCart : [];
+  editingShipmentId = snapshot.editingShipmentId || null;
+  editingShipmentCreatedAt = snapshot.editingShipmentCreatedAt || null;
+  refreshShipmentEditorUI();
+  renderShipmentCart();
+}
+
+function refreshShipmentEditorUI() {
+  if (!els.btnCreateShipment) return;
+  els.btnCreateShipment.textContent = editingShipmentId ? "Save shipment changes" : "Create shipment";
+}
+
+function requestOnlineAutosave() {
+  if (!supabaseClient || !isAdmin() || !state) return;
+  if (onlineAutosaveTimer) clearTimeout(onlineAutosaveTimer);
+  onlineAutosaveTimer = setTimeout(() => doOnlineAutosave(), 700);
+}
+
+async function doOnlineAutosave() {
+  if (!supabaseClient || !isAdmin() || !state) return;
+  if (onlineAutosaveInFlight) {
+    onlineAutosaveQueued = true;
+    return;
+  }
+  onlineAutosaveInFlight = true;
+  onlineAutosaveQueued = false;
+  try {
+    await portalSaveCatalogue(true);
+  } catch (e) {
+    console.error(e);
+    setRealtimeStatus("Live sync error", "is-error");
+  } finally {
+    onlineAutosaveInFlight = false;
+    if (onlineAutosaveQueued) {
+      onlineAutosaveQueued = false;
+      doOnlineAutosave();
+    }
+  }
+}
+
+async function portalSaveCatalogue(silent = false) {
+  if (!isAdmin()) { if (!silent) alert("Admin login required to save."); return; }
+  if (!supabaseClient) { if (!silent) alert("Supabase not configured yet."); return; }
+  const nowIso = new Date().toISOString();
+  const clean = JSON.parse(JSON.stringify(state));
+  delete clean._dirty;
+  const { error } = await supabaseClient
+    .from("catalogue")
+    .upsert({ id: CATALOGUE_ROW_ID, data: clean, updated_at: nowIso }, { onConflict: "id" });
+  if (error) {
+    if (!silent) alert("Save failed: " + error.message);
+    throw error;
+  }
+  currentRemoteUpdatedAt = nowIso;
+  suppressRemoteApplyUntil = Date.now() + 2000;
+  setDirty(false);
+  setRealtimeStatus("Live synced", "is-live");
+  if (!silent) alert("Saved online ✅");
+}
+
+function setDirty(isDirty) {
+  if (!state) return;
+  state._dirty = !!isDirty;
+  els.fileNote.textContent =
+    (loadedFileName ? `Loaded: ${loadedFileName}` : "Loaded.") +
+    (isDirty ? "  •  Unsaved changes" : "");
+
+  if (isDirty) {
+    if (fs.folderHandle) {
+      if (els.folderStatus) els.folderStatus.textContent = "Folder mode: ON (saving…)";
+      requestAutosave();
+    } else if (supabaseClient && isAdmin()) {
+      setRealtimeStatus("Saving live…", "is-saving");
+      requestOnlineAutosave();
+    }
+  }
+}
+
+async function applyRemoteCatalogue(row) {
+  if (!row?.data) return;
+  const snap = preserveCartFormState();
+  const incoming = JSON.parse(JSON.stringify(row.data));
+  validateAndNormalize(incoming);
+  state = incoming;
+  loadedFileName = "online:supabase/catalogue/main";
+  currentRemoteUpdatedAt = row.updated_at || currentRemoteUpdatedAt;
+  setEnabled(true);
+  state._dirty = false;
+  render();
+  restoreCartFormState(snap);
+  if (els.shipHistDlg?.open) renderShipmentHistory();
+}
+
+async function initRealtimeSync() {
+  if (!supabaseClient) {
+    setRealtimeStatus("Local mode", "");
+    return;
+  }
+  setRealtimeStatus("Live connected", "is-live");
+  if (realtimeChannel) {
+    try { await supabaseClient.removeChannel(realtimeChannel); } catch {}
+  }
+  realtimeChannel = supabaseClient
+    .channel("catalogue-live-main")
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "catalogue",
+      filter: `id=eq.${CATALOGUE_ROW_ID}`
+    }, async (payload) => {
+      const row = payload?.new;
+      if (!row?.data) return;
+      if (Date.now() < suppressRemoteApplyUntil) return;
+      if (row.updated_at && currentRemoteUpdatedAt && row.updated_at <= currentRemoteUpdatedAt) return;
+      await applyRemoteCatalogue(row);
+      setRealtimeStatus("Updated live", "is-live");
+    })
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") setRealtimeStatus("Live connected", "is-live");
+      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setRealtimeStatus("Live connection issue", "is-error");
+    });
+}
+
+function resetShipmentEditor() {
+  editingShipmentId = null;
+  editingShipmentCreatedAt = null;
+  refreshShipmentEditorUI();
+}
+
+function clearShipmentCart() {
+  shipmentCart = [];
+  resetShipmentEditor();
+  renderShipmentCart();
+}
+
+function shipmentRecordToDraft(s) {
+  const row = normalizeShipmentRecords([s])[0];
+  return {
+    id: row.id,
+    date: row.date,
+    destination: row.destination,
+    recipient: row.recipient,
+    reference: row.reference,
+    notes: row.notes,
+    extraUE: !!row.extraUE,
+    createdAt: row.createdAt,
+    items: row.items.map(it => {
+      const p = state.products.find(x => x.id === it.productId || x.name === it.productName);
+      return {
+        ...it,
+        customsCode: p?.customsCode || it.customsCode || "",
+        unitWeightKg: Number(p?.unitWeightKg || it.unitWeightKg || 0) || 0,
+      };
+    }),
+    errors: []
+  };
+}
+
+function restoreUnitsToLot(p, expiry, qty) {
+  if (!p) return;
+  const units = Math.max(0, Math.trunc(Number(qty) || 0));
+  if (!units) return;
+  const key = getLotKey(expiry);
+  p.lots = normalizeLots(Array.isArray(p.lots) ? p.lots : []);
+  let lot = p.lots.find(l => !l.ordered && getLotKey(l.expiry) === key);
+  if (!lot) {
+    lot = { expiry: key, qty: 0, ordered: false };
+    p.lots.push(lot);
+  }
+  lot.qty = Math.max(0, Math.trunc(Number(lot.qty) || 0)) + units;
+  p.lots = normalizeLots(p.lots);
+}
+
+function restoreShipmentStock(shipment) {
+  const s = normalizeShipmentRecords([shipment])[0];
+  for (const item of s.items) {
+    const p = state.products.find(x => x.id === item.productId || x.name === item.productName);
+    if (!p) continue;
+    restoreUnitsToLot(p, item.lotExpiry || "__unknown__", item.unitsQty);
+  }
+}
+
+function startEditShipment(id) {
+  if (!isAdmin()) return;
+  state.shipments = normalizeShipmentRecords(state.shipments);
+  const shipment = state.shipments.find(x => x.id === id);
+  if (!shipment) return;
+  if (!confirm(`Load shipment ${id} back into the cart for editing? Stock will be restored until you save the updated shipment.`)) return;
+
+  restoreShipmentStock(shipment);
+  state.shipments = state.shipments.filter(x => x.id !== id);
+  shipmentCart = shipment.items.map(it => ({
+    id: uid("cart"),
+    productId: it.productId,
+    productName: it.productName,
+    lotExpiry: it.lotExpiry || "__unknown__",
+    unitMode: it.unitMode === "ct" ? "ct" : "units",
+    qty: Math.max(1, Math.trunc(Number(it.qty) || 1))
+  }));
+  editingShipmentId = shipment.id;
+  editingShipmentCreatedAt = shipment.createdAt || new Date().toISOString();
+  if (els.cartShipDate) els.cartShipDate.value = formatDateDMY(shipment.date || todayISO());
+  if (els.cartDestination) els.cartDestination.value = shipment.destination || "";
+  if (els.cartRecipient) els.cartRecipient.value = shipment.recipient || "";
+  if (els.cartReference) els.cartReference.value = shipment.reference || "";
+  if (els.cartNotes) els.cartNotes.value = shipment.notes || "";
+  if (els.cartExtraUE) els.cartExtraUE.checked = !!shipment.extraUE;
+  setDirty(true);
+  refreshShipmentEditorUI();
+  render();
+  if (els.shipHistDlg?.open) els.shipHistDlg.close();
+  els.shipmentCartPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function deleteShipment(id) {
+  if (!isAdmin()) return;
+  state.shipments = normalizeShipmentRecords(state.shipments);
+  const shipment = state.shipments.find(x => x.id === id);
+  if (!shipment) return;
+  if (!confirm("Delete this shipment and restore the stock?")) return;
+  restoreShipmentStock(shipment);
+  state.shipments = state.shipments.filter(x => x.id !== id);
+  setDirty(true);
+  render();
+  renderShipmentHistory();
+}
+
+function buildShipmentDraftFromCart(requireValidation = true) {
+  const dateISO = parseDMYToISO(els.cartShipDate?.value || '') || todayISO();
+  const destination = (els.cartDestination?.value || '').trim();
+  const recipient = (els.cartRecipient?.value || '').trim();
+  const reference = (els.cartReference?.value || '').trim();
+  const notes = (els.cartNotes?.value || '').trim();
+  const extraUE = !!els.cartExtraUE?.checked;
+
+  const items = [];
+  const errors = [];
+
+  for (const item of shipmentCart) {
+    const p = state.products.find(x => x.id === item.productId);
+    if (!p) continue;
+    const lot = normalizeLots((p.lots || []).filter(l => !l.ordered)).find(l => getLotKey(l.expiry) === getLotKey(item.lotExpiry));
+    const availableUnits = Math.max(0, Math.trunc(Number(lot?.qty) || 0));
+    const requestedUnits = cartItemRequestedUnits(item);
+    if (requireValidation) {
+      if (!lot) errors.push(`${p.name}: selected lot not found.`);
+      else if (requestedUnits > availableUnits) errors.push(`${p.name}: requested ${requestedUnits}, available ${availableUnits} in lot ${formatDateDMY(item.lotExpiry)}.`);
+      if (item.unitMode === "ct" && (!p.ctSize || p.ctSize <= 0)) errors.push(`${p.name}: CT size missing.`);
+    }
+    items.push({
+      productId: p.id,
+      productName: p.name,
+      lotExpiry: item.lotExpiry,
+      unitMode: item.unitMode === "ct" ? "ct" : "units",
+      qty: Math.max(1, Math.trunc(Number(item.qty) || 1)),
+      unitsQty: requestedUnits,
+      customsCode: p.customsCode || "",
+      unitWeightKg: Number(p.unitWeightKg || 0) || 0
+    });
+  }
+
+  return {
+    id: editingShipmentId || uid("ship"),
+    date: dateISO,
+    destination,
+    recipient,
+    reference,
+    notes,
+    extraUE,
+    createdAt: editingShipmentCreatedAt || new Date().toISOString(),
+    items,
+    errors
+  };
+}
+
+function createShipmentFromCart() {
+  if (!isAdmin()) { alert("Admin login required."); return; }
+  if (!shipmentCart.length) { alert("Cart is empty."); return; }
+  const draft = buildShipmentDraftFromCart(true);
+  if (draft.errors.length) {
+    alert(draft.errors.join("\n"));
+    return;
+  }
+
+  for (const item of draft.items) {
+    const p = state.products.find(x => x.id === item.productId);
+    if (!p) continue;
+    const ok = withdrawFromSpecificLot(p, item.lotExpiry, item.unitsQty);
+    if (!ok) {
+      alert(`Could not withdraw stock for ${item.productName}.`);
+      return;
+    }
+  }
+
+  state.shipments = normalizeShipmentRecords(state.shipments).filter(x => x.id !== draft.id);
+  state.shipments.unshift({
+    id: draft.id,
+    date: draft.date,
+    destination: draft.destination,
+    recipient: draft.recipient,
+    reference: draft.reference,
+    notes: draft.notes,
+    extraUE: draft.extraUE,
+    createdAt: draft.createdAt,
+    items: draft.items
+  });
+
+  setDirty(true);
+  exportShipmentDraftPDF(draft);
+  exportShipmentDraftExcel(draft);
+  if (draft.extraUE) exportDHLList(draft);
+  shipmentCart = [];
+  resetShipmentEditor();
+  render();
+  renderShipmentHistory();
+}
+
+function shipmentItemsText(s) {
+  const items = Array.isArray(s.items) ? s.items : [];
+  return items.map(it => {
+    const lotTxt = formatDateDMY(it.lotExpiry || "__unknown__");
+    const modeTxt = it.unitMode === "ct" ? `${it.qty} CT` : `${it.qty} u`;
+    return `${it.productName} • ${modeTxt} • Lot ${lotTxt}`;
+  }).join(" | ");
+}
+
+function filteredShipments() {
+  const q = (els.shipHistSearch?.value || '').trim().toLowerCase();
+  const arr = normalizeShipmentRecords(state?.shipments);
+  arr.sort((a,b) => `${b.date}|${b.createdAt || ''}`.localeCompare(`${a.date}|${a.createdAt || ''}`));
+  if (!q) return arr;
+  return arr.filter(s => [shipmentItemsText(s), s.destination, s.recipient, s.reference, s.notes, s.extraUE ? 'dhl extra ue' : ''].join(' ').toLowerCase().includes(q));
+}
+
+function renderShipmentHistory() {
+  if (!els.shipHistBody) return;
+  state.shipments = normalizeShipmentRecords(state.shipments);
+  const rows = filteredShipments();
+  els.shipHistBody.innerHTML = '';
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="8" class="shipEmpty">No shipments registered yet.</td>';
+    els.shipHistBody.appendChild(tr);
+  } else {
+    for (const s of rows) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${formatDateDMY(s.date)}</td>
+        <td>${escapeHtml(shipmentItemsText(s))}</td>
+        <td>${escapeHtml(s.destination || '')}</td>
+        <td>${escapeHtml(s.recipient || '')}</td>
+        <td>${escapeHtml(s.reference || '')}</td>
+        <td>${escapeHtml(s.notes || '')}</td>
+        <td>${s.extraUE ? 'Yes' : 'No'}</td>
+        <td class="shipDel">
+          <div class="shipActions">
+            <button class="btn small ghost" type="button" data-ship-act="pdf">PDF</button>
+            <button class="btn small ghost" type="button" data-ship-act="dhl">DHL</button>
+            ${isAdmin() ? '<button class="btn small ghost" type="button" data-ship-act="edit">Edit</button><button class="btn small ghost danger" type="button" data-ship-act="del">Del</button>' : ''}
+          </div>
+        </td>`;
+      tr.querySelector('[data-ship-act="pdf"]')?.addEventListener('click', () => exportShipmentDraftPDF(shipmentRecordToDraft(s)));
+      tr.querySelector('[data-ship-act="dhl"]')?.addEventListener('click', () => exportDHLList(shipmentRecordToDraft(s)));
+      tr.querySelector('[data-ship-act="edit"]')?.addEventListener('click', () => startEditShipment(s.id));
+      tr.querySelector('[data-ship-act="del"]')?.addEventListener('click', () => deleteShipment(s.id));
+      els.shipHistBody.appendChild(tr);
+    }
+  }
+  if (els.shipHistCount) els.shipHistCount.textContent = `${rows.length} shipment${rows.length === 1 ? '' : 's'}`;
+}
+
+function openShipmentHistoryDlg() {
+  renderShipmentHistory();
+  els.shipHistDlg.showModal();
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  refreshShipmentEditorUI();
+  initRealtimeSync();
+});
+/* ==================== end live sync + shipment history upgrade ==================== */

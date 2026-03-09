@@ -529,3 +529,37 @@ textarea{resize:vertical}
 @media (max-width: 900px){
   .shipmentCartGrid{grid-template-columns:1fr 1fr}
 }
+
+
+/* desktop content with cart on the right */
+.content{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 380px;
+  gap:12px;
+  align-items:start;
+}
+.filterLine{grid-column:1 / -1}
+.productGrid,.empty{grid-column:1;}
+.shipmentCartPanel{
+  grid-column:2;
+  grid-row:2 / span 3;
+  position:sticky;
+  top:92px;
+  margin-bottom:0;
+  box-shadow:0 8px 20px rgba(0,0,0,.06);
+}
+.realtimeStatus{font-weight:700}
+.realtimeStatus.is-live{color:#1f7a37}
+.realtimeStatus.is-saving{color:#9a6700}
+.realtimeStatus.is-error{color:#b42318}
+.shipActions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.shipmentCartPanel .rowBtns .btn{flex:1 1 calc(50% - 8px)}
+
+@media (max-width: 1180px){
+  .content{grid-template-columns:minmax(0,1fr) 330px;}
+}
+@media (max-width: 900px){
+  .content{display:block;}
+  .shipmentCartPanel{position:static;top:auto;margin-bottom:12px;}
+  .shipActions{justify-content:flex-start}
+}
