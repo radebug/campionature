@@ -503,7 +503,7 @@ function requestSupabaseAutosave() {
         .from("catalogue")
         .upsert({ id: CATALOGUE_ROW_ID, data: state, updated_at: new Date().toISOString() }, { onConflict: "id" });
       if (!error) {
-        setDirtyUI(false);
+        state._dirty = false;
         if (els.fileNote) els.fileNote.textContent = (loadedFileName ? `📂 ${loadedFileName}` : "Loaded.") + " • ✓ Saved";
       }
     } catch(e) { console.warn("Autosave failed:", e); }
@@ -1380,6 +1380,7 @@ function formatShipmentFileName(dateISO) {
 }
 
 
+function withdrawFromSpecificLot(p, expiry, qtyNeeded) {
   let remaining = Math.max(0, Math.trunc(Number(qtyNeeded) || 0)); if (!remaining) return true;
   const lot = (p.lots || []).find(l => !l.ordered && getLotKey(l.expiry) === getLotKey(expiry));
   if (!lot || lot.qty < remaining) return false;
@@ -1586,6 +1587,8 @@ function importCatalogueFromExcel(file) {
 }
 
 
+/* Excel export */
+function exportCatalogueExcel() {
   if (!state) return;
   if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
   const wb = XLSX.utils.book_new();
