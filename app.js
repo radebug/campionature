@@ -163,6 +163,11 @@ function refreshAuthUI() {
     els.btnAddCategory.disabled = !editable;
     els.btnAddCategory.style.opacity = editable ? "" : ".4";
   }
+  const btnImportExcel = document.getElementById("btnImportExcel");
+  if (btnImportExcel) {
+    btnImportExcel.disabled = !editable || !state;
+    btnImportExcel.style.opacity = (editable && state) ? "" : ".4";
+  }
   if (els?.btnShipments) els.btnShipments.disabled = !state;
   if (els?.btnExportExcel) els.btnExportExcel.disabled = !state;
 }
@@ -413,6 +418,19 @@ function wire() {
   if (els.shipForm) els.shipForm.addEventListener("submit", onShipSubmit);
   if (els.shipDate) attachDMYMask(els.shipDate);
 
+  // Import Excel
+  const btnImportExcel = document.getElementById("btnImportExcel");
+  const importExcelPicker = document.getElementById("importExcelPicker");
+  if (btnImportExcel && importExcelPicker) {
+    btnImportExcel.addEventListener("click", () => importExcelPicker.click());
+    importExcelPicker.addEventListener("change", () => {
+      const file = importExcelPicker.files?.[0];
+      importExcelPicker.value = "";
+      if (!file) return;
+      importCatalogueFromExcel(file);
+    });
+  }
+
   setEnabled(false);
   if (els.fileNote) els.fileNote.textContent = "Loading…";
 }
@@ -474,19 +492,42 @@ function setEnabled(on) {
   if (els.btnExportExcel) els.btnExportExcel.disabled = !on;
 }
 
+let supabaseAutosaveTimer = null;
+
+function requestSupabaseAutosave() {
+  if (!supabaseClient || !isAdmin() || !state) return;
+  if (supabaseAutosaveTimer) clearTimeout(supabaseAutosaveTimer);
+  supabaseAutosaveTimer = setTimeout(async () => {
+    try {
+      const { error } = await supabaseClient
+        .from("catalogue")
+        .upsert({ id: CATALOGUE_ROW_ID, data: state, updated_at: new Date().toISOString() }, { onConflict: "id" });
+      if (!error) {
+        setDirtyUI(false);
+        if (els.fileNote) els.fileNote.textContent = (loadedFileName ? `📂 ${loadedFileName}` : "Loaded.") + " • ✓ Saved";
+      }
+    } catch(e) { console.warn("Autosave failed:", e); }
+  }, 800);
+}
+
 function setDirty(isDirty) {
   if (!state) return;
   state._dirty = !!isDirty;
   if (els.fileNote) {
     els.fileNote.textContent =
       (loadedFileName ? `📂 ${loadedFileName}` : "Loaded.")
-      + (isDirty ? " • ⚠ Unsaved changes" : " • ✓ Saved");
+      + (isDirty ? " • ⚠ Saving…" : " • ✓ Saved");
   }
   if (isDirty && fs.folderHandle) {
     if (els.folderStatus) els.folderStatus.textContent = "Folder mode: ON (saving…)";
     requestAutosave();
   }
+  if (isDirty && supabaseClient) {
+    requestSupabaseAutosave();
+  }
 }
+
+
 
 function validateAndNormalize(obj) {
   if (!obj || typeof obj !== "object") throw new Error("Invalid JSON format");
@@ -1317,10 +1358,28 @@ function buildShipmentDraftFromCart(requireValidation = true) {
       customsCode: p.customsCode || "", unitWeightKg: Number(p.unitWeightKg || 0) || 0
     });
   }
-  return { id: uid("ship"), date: dateISO, destination, recipient, reference, notes, extraUE, createdAt: new Date().toISOString(), items, errors };
+  return { id: formatShipmentFileName(dateISO), date: dateISO, destination, recipient, reference, notes, extraUE, createdAt: new Date().toISOString(), items, errors };
 }
 
-function withdrawFromSpecificLot(p, expiry, qtyNeeded) {
+function getNextShipmentNumber() {
+  const all = normalizeShipmentRecords(state.shipments || []);
+  // Count how many shipments share the same date as today
+  const todayStr = todayISO();
+  const todayShipments = all.filter(s => s.date === todayStr);
+  return todayShipments.length + 1;
+}
+
+function formatShipmentFileName(dateISO) {
+  // Format: GGMMAA-N (e.g. 100326-1)
+  const d = new Date(dateISO + 'T00:00:00');
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const n = getNextShipmentNumber();
+  return `${dd}${mm}${yy}-${n}`;
+}
+
+
   let remaining = Math.max(0, Math.trunc(Number(qtyNeeded) || 0)); if (!remaining) return true;
   const lot = (p.lots || []).find(l => !l.ordered && getLotKey(l.expiry) === getLotKey(expiry));
   if (!lot || lot.qty < remaining) return false;
@@ -1413,6 +1472,11 @@ function renderShipmentHistory() {
 function deleteShipment(id) {
   if (!isAdmin()) return;
   if (!confirm('Delete this shipment record?')) return;
+  const shipment = normalizeShipmentRecords(state.shipments).find(x => x.id === id);
+  if (shipment) {
+    const restoreStock = confirm('Vuoi aggiornare lo stock?\n\nSì = i prodotti della spedizione vengono rimessi in stock.\nNo = la spedizione viene cancellata senza modifiche allo stock.');
+    if (restoreStock) restoreShipmentToStock(shipment);
+  }
   state.shipments = normalizeShipmentRecords(state.shipments).filter(x => x.id !== id);
   setDirty(true); renderShipmentHistory();
 }
@@ -1444,7 +1508,8 @@ function editShipment(id) {
   const shipment = normalizeShipmentRecords(state.shipments).find(x => x.id === id);
   if (!shipment) return;
   if (!confirm('Load this shipment back into the cart for editing?')) return;
-  restoreShipmentToStock(shipment);
+  const restoreStock = confirm('Vuoi aggiornare lo stock?\n\nSì = i prodotti della spedizione vengono rimessi in stock.\nNo = la spedizione viene caricata nel carrello senza modifiche allo stock.');
+  if (restoreStock) restoreShipmentToStock(shipment);
   state.shipments = normalizeShipmentRecords(state.shipments).filter(x => x.id !== id);
   loadShipmentIntoCart(shipment);
   setDirty(true); render(); renderShipmentHistory();
@@ -1460,8 +1525,67 @@ function exportShipmentFromHistory(id, kind = 'pdf') {
   else if (kind === 'dhl') exportDHLList(shipment);
 }
 
-/* Excel export */
-function exportCatalogueExcel() {
+/* Import catalogue from Excel */
+function importCatalogueFromExcel(file) {
+  if (!isAdmin()) { alert("Admin login required to import."); return; }
+  if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'binary' });
+      const sheet = wb.Sheets['Products'];
+      if (!sheet) { alert('Sheet "Products" not found in the Excel file.\nMake sure to upload the file exported by "Export Excel".'); return; }
+      const rows = XLSX.utils.sheet_to_json(sheet);
+      if (!rows.length) { alert('No product rows found in sheet "Products".'); return; }
+
+      let imported = 0, updated = 0;
+      for (const row of rows) {
+        const name = (row['Product'] || '').trim();
+        if (!name) continue;
+        // Find categories by name
+        const catNames = (row['Categories'] || '').split(',').map(s => s.trim()).filter(Boolean);
+        const categoryIds = catNames.map(n => {
+          let cat = state.categories.find(c => c.name === n);
+          if (!cat) { cat = { id: uid('cat'), name: n }; state.categories.push(cat); }
+          return cat.id;
+        });
+        let p = state.products.find(x => x.name === name);
+        if (p) {
+          // Update existing product fields (keep lots/stock intact)
+          p.categoryIds = categoryIds.length ? categoryIds : p.categoryIds;
+          if (row['CTSize'] !== undefined && row['CTSize'] !== '') p.ctSize = parseInt(row['CTSize']) || null;
+          if (row['CustomsCode']) p.customsCode = String(row['CustomsCode']).trim();
+          if (row['UnitWeightKg'] !== undefined && row['UnitWeightKg'] !== '') p.unitWeightKg = Number(row['UnitWeightKg']) || '';
+          if (row['Image']) p.imageFileName = String(row['Image']).trim();
+          if (row['Wordings'] !== undefined) p.wordings = row['Wordings'] ? String(row['Wordings']).split('|').map(s=>s.trim()).filter(Boolean) : p.wordings;
+          if (row['Codes'] !== undefined) p.codes = row['Codes'] ? String(row['Codes']).split('|').map(s=>s.trim()).filter(Boolean) : p.codes;
+          if (row['Notes'] !== undefined) p.notes = String(row['Notes'] || '').trim();
+          updated++;
+        } else {
+          state.products.push({
+            id: uid('prod'), name, categoryIds,
+            ctSize: parseInt(row['CTSize']) || null,
+            customsCode: String(row['CustomsCode'] || '').trim(),
+            unitWeightKg: Number(row['UnitWeightKg'] || 0) || '',
+            imageFileName: String(row['Image'] || '').trim(),
+            wordings: row['Wordings'] ? String(row['Wordings']).split('|').map(s=>s.trim()).filter(Boolean) : [],
+            codes: row['Codes'] ? String(row['Codes']).split('|').map(s=>s.trim()).filter(Boolean) : [],
+            notes: String(row['Notes'] || '').trim(),
+            lots: []
+          });
+          imported++;
+        }
+      }
+      setDirty(true); render();
+      alert(`✅ Import completato!\n${imported} prodotti aggiunti, ${updated} prodotti aggiornati.`);
+    } catch(err) {
+      alert('Errore durante l\'import: ' + (err?.message || err));
+    }
+  };
+  reader.readAsBinaryString(file);
+}
+
+
   if (!state) return;
   if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
   const wb = XLSX.utils.book_new();

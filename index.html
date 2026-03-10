@@ -56,8 +56,10 @@
 
     <!-- Sub-nav: Add buttons + status -->
     <div class="topbar-sub">
-      <button class="sub-link" id="btnAddProduct" disabled>+ Add Product</button>
-      <button class="sub-link" id="btnAddCategory" disabled>+ Add Category</button>
+      <button class="sub-link sub-link-dark" id="btnAddProduct" disabled>+ Add Product</button>
+      <button class="sub-link sub-link-dark" id="btnAddCategory" disabled>+ Add Category</button>
+      <button class="sub-link sub-link-dark" id="btnImportExcel" disabled>📥 Import Excel</button>
+      <input id="importExcelPicker" type="file" accept=".xlsx,.xls" hidden />
       <span style="color:#8a96a0;font-size:12px;margin-left:auto" id="fileNote">Loading…</span>
 
       <!-- Hidden folder mode / file picker (kept for compatibility) -->
