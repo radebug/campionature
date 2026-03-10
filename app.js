@@ -109,8 +109,9 @@ function loadPortalSession() {
     const raw = localStorage.getItem(PORTAL_SESSION_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw);
-    if (!s?.token) return null;
-    if (s.exp && Date.now() > (s.exp * 1000)) {
+    if (!s || !s.token) return null;
+    // If we have a refresh_token, initSupabase will handle renewal — don't expire locally
+    if (!s.supabaseSession && s.exp && Date.now() > (s.exp * 1000)) {
       localStorage.removeItem(PORTAL_SESSION_KEY);
       return null;
     }
@@ -178,6 +179,29 @@ async function initSupabase() {
     return;
   }
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Restore Supabase auth session from stored tokens so login survives page reload
+  try {
+    const raw = localStorage.getItem(PORTAL_SESSION_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s && s.supabaseSession && s.supabaseSession.access_token && s.supabaseSession.refresh_token) {
+        await supabaseClient.auth.setSession({
+          access_token: s.supabaseSession.access_token,
+          refresh_token: s.supabaseSession.refresh_token
+        });
+        const refreshed = await supabaseClient.auth.getSession();
+        if (refreshed.data && refreshed.data.session) {
+          const sess = refreshed.data.session;
+          s.supabaseSession = { access_token: sess.access_token, refresh_token: sess.refresh_token };
+          s.token = sess.access_token;
+          s.exp = Math.floor(new Date(sess.expires_at || 0).getTime() / 1000) || Math.floor(Date.now()/1000) + 3600;
+          localStorage.setItem(PORTAL_SESSION_KEY, JSON.stringify(s));
+          portalSession = s;
+        }
+      }
+    }
+  } catch(e) { console.warn("Session restore failed:", e); }
 }
 
 async function loadCatalogueOnline() {
@@ -209,7 +233,8 @@ async function portalLogin(username, password) {
     token: session.access_token,
     role: "admin",
     username,
-    exp: Math.floor(new Date(session.expires_at || 0).getTime() / 1000) || Math.floor(Date.now()/1000)+3600
+    exp: Math.floor(new Date(session.expires_at || 0).getTime() / 1000) || Math.floor(Date.now()/1000)+86400*7,
+    supabaseSession: { access_token: session.access_token, refresh_token: session.refresh_token }
   });
 }
 
@@ -1534,16 +1559,17 @@ function importCatalogueFromExcel(file) {
   reader.onload = (e) => {
     try {
       const wb = XLSX.read(e.target.result, { type: 'binary' });
-      const sheet = wb.Sheets['Products'];
-      if (!sheet) { alert('Sheet "Products" not found in the Excel file.\nMake sure to upload the file exported by "Export Excel".'); return; }
-      const rows = XLSX.utils.sheet_to_json(sheet);
-      if (!rows.length) { alert('No product rows found in sheet "Products".'); return; }
+
+      // ---- Products sheet ----
+      const prodSheet = wb.Sheets['Products'];
+      if (!prodSheet) { alert('Sheet "Products" not found.\nUpload the file exported by "Export Excel".'); return; }
+      const prodRows = XLSX.utils.sheet_to_json(prodSheet);
+      if (!prodRows.length) { alert('No product rows found in sheet "Products".'); return; }
 
       let imported = 0, updated = 0;
-      for (const row of rows) {
+      for (const row of prodRows) {
         const name = (row['Product'] || '').trim();
         if (!name) continue;
-        // Find categories by name
         const catNames = (row['Categories'] || '').split(',').map(s => s.trim()).filter(Boolean);
         const categoryIds = catNames.map(n => {
           let cat = state.categories.find(c => c.name === n);
@@ -1552,8 +1578,7 @@ function importCatalogueFromExcel(file) {
         });
         let p = state.products.find(x => x.name === name);
         if (p) {
-          // Update existing product fields (keep lots/stock intact)
-          p.categoryIds = categoryIds.length ? categoryIds : p.categoryIds;
+          if (categoryIds.length) p.categoryIds = categoryIds;
           if (row['CTSize'] !== undefined && row['CTSize'] !== '') p.ctSize = parseInt(row['CTSize']) || null;
           if (row['CustomsCode']) p.customsCode = String(row['CustomsCode']).trim();
           if (row['UnitWeightKg'] !== undefined && row['UnitWeightKg'] !== '') p.unitWeightKg = Number(row['UnitWeightKg']) || '';
@@ -1577,10 +1602,42 @@ function importCatalogueFromExcel(file) {
           imported++;
         }
       }
+
+      // ---- Lots sheet: replace stock lots from Excel ----
+      const lotsSheet = wb.Sheets['Lots'];
+      let lotsUpdated = 0;
+      if (lotsSheet) {
+        const lotRows = XLSX.utils.sheet_to_json(lotsSheet);
+        // Group lot rows by product name
+        const lotsByProduct = {};
+        for (const row of lotRows) {
+          const pname = (row['Product'] || '').trim();
+          if (!pname) continue;
+          if (!lotsByProduct[pname]) lotsByProduct[pname] = [];
+          lotsByProduct[pname].push(row);
+        }
+        for (const [pname, lots] of Object.entries(lotsByProduct)) {
+          const p = state.products.find(x => x.name === pname);
+          if (!p) continue;
+          // Replace non-ordered lots with those from the sheet; keep ordered lots
+          const orderedLots = (p.lots || []).filter(l => l.ordered);
+          const newLots = lots.map(row => {
+            const expiryRaw = String(row['Expiry'] || '').trim();
+            const expiry = expiryRaw === 'Unknown' ? '__unknown__' : expiryRaw;
+            const qty = Math.max(0, Math.trunc(Number(row['Qty']) || 0));
+            const ordered = String(row['Ordered'] || '').trim().toLowerCase() === 'yes';
+            return { expiry, qty, ordered };
+          }).filter(l => l.qty > 0 && !l.ordered); // only real stock lots
+          p.lots = normalizeLots([...orderedLots, ...newLots]);
+          lotsUpdated++;
+        }
+      }
+
       setDirty(true); render();
-      alert(`✅ Import completato!\n${imported} prodotti aggiunti, ${updated} prodotti aggiornati.`);
+      const lotsMsg = lotsSheet ? `, stock aggiornato per ${lotsUpdated} prodotti` : ' (foglio Lots non trovato, stock non modificato)';
+      alert(`✅ Import completato!\n${imported} prodotti aggiunti, ${updated} prodotti aggiornati${lotsMsg}.`);
     } catch(err) {
-      alert('Errore durante l\'import: ' + (err?.message || err));
+      alert('Errore durante l\'import: ' + (err ? (err.message || String(err)) : 'errore sconosciuto'));
     }
   };
   reader.readAsBinaryString(file);
