@@ -166,8 +166,8 @@ function refreshAuthUI() {
   }
   const btnImportExcel = document.getElementById("btnImportExcel");
   if (btnImportExcel) {
-    btnImportExcel.disabled = !editable || !state;
-    btnImportExcel.style.opacity = (editable && state) ? "" : ".4";
+    btnImportExcel.disabled = !editable;
+    btnImportExcel.style.opacity = editable ? "" : ".4";
   }
   if (els?.btnShipments) els.btnShipments.disabled = !state;
   if (els?.btnExportExcel) els.btnExportExcel.disabled = !state;
@@ -219,6 +219,7 @@ async function loadCatalogueOnline() {
   setEnabled(true);
   setDirty(false);
   render();
+  refreshAuthUI();
   return true;
 }
 
