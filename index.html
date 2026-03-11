@@ -34,6 +34,10 @@
           <small>History</small>
           <b>📋 Shipments</b>
         </button>
+        <button class="nav-btn" id="btnCommRequests" style="display:none">
+          <small>Commerciale</small>
+          <b>📩 Richieste</b>
+        </button>
         <button class="nav-btn" id="btnExportExcel" disabled>
           <small>Export</small>
           <b>📊 Excel</b>
@@ -401,7 +405,32 @@
     </div>
   </template>
 
+  <!-- Richieste Commerciali dialog (admin only) -->
+  <dialog class="dlg" id="commRequestsDlg">
+    <form method="dialog" class="dlgBody wide shipHistBody" id="commRequestsForm">
+      <div class="dlgTitle">📩 Richieste Campionatura — Commerciale</div>
+      <div class="shipHistTools">
+        <input class="search" id="commReqSearch" type="search" placeholder="Cerca per nome, riferimento, email…" style="min-width:240px;flex:1;" />
+      </div>
+      <div class="shipTableWrap">
+        <table class="shipTable">
+          <thead>
+            <tr>
+              <th>Data</th><th>Nome</th><th>Email</th><th>Riferimento</th><th>Destinazione</th><th>Consegna</th><th>Prodotti</th><th>PDF</th>
+            </tr>
+          </thead>
+          <tbody id="commReqBody"></tbody>
+        </table>
+      </div>
+      <div class="smallNote" id="commReqCount"></div>
+      <div class="dlgBtns">
+        <button class="btn ghost" type="button" id="btnCommReqClose">Chiudi</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Scripts -->
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     window.SUPABASE_URL = "https://ocsctsikfeklqqsuicls.supabase.co";
