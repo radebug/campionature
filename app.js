@@ -447,6 +447,7 @@ async function sendSamplingRequest() {
 }
 
 
+async function portalSaveCatalogue() {
   if (!isAdmin()) { alert("Admin login required to save."); return; }
   if (!supabaseClient) { alert("Supabase not configured yet."); return; }
   const { error } = await supabaseClient
