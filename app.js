@@ -144,10 +144,10 @@ const LOCAL_ACCOUNTS = {
 //    e come allegato usa {{pdf_attachment}} con nome {{pdf_name}}
 // 4. Copia il tuo Public Key dalla sezione Account
 // 5. Sostituisci i valori EMAILJS_* qui sotto
-const EMAILJS_SERVICE_ID  = "YOUR_SERVICE_ID";   // es. "service_abc123"
-const EMAILJS_TEMPLATE_ID = "YOUR_TEMPLATE_ID";  // es. "template_xyz456"
-const EMAILJS_PUBLIC_KEY  = "YOUR_PUBLIC_KEY";   // es. "aBcDeFgHiJkLmNoP"
-const EMAILJS_CONFIGURED  = ![EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY].some(v => v.startsWith("YOUR_"));
+const EMAILJS_SERVICE_ID  = "service_cj0rkor";
+const EMAILJS_TEMPLATE_ID = "template_gm4ulb7";
+const EMAILJS_PUBLIC_KEY  = "Xt-FOX9VRrybIkv1k";
+const EMAILJS_CONFIGURED  = true;
 
 function refreshAuthUI() {
   const st = document.getElementById("authStatus");
@@ -535,32 +535,15 @@ async function sendSamplingRequest() {
       if (btn) { btn.disabled = false; btn.textContent = origText; }
     }
   } else {
-    // Manual: try Web Share API first (auto-attaches PDF), fallback to mailto
+    // Modalità manuale: scarica PDF e apre client email precompilato
+    doc.save(pdfFileName);
     const subject = `Richiesta campionatura N°${requestNumber} — ${name} — ${reference}`;
-    const bodyWithNote = emailBody + `\n\n---\nN° richiesta: ${requestNumber}\nPDF allegato: ${pdfFileName}`;
-    const pdfFile = new File([pdfBlob], pdfFileName, { type: 'application/pdf' });
-
-    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-      try {
-        await navigator.share({
-          title: subject,
-          text: bodyWithNote,
-          files: [pdfFile],
-        });
-        alert(`✅ Richiesta N°${requestNumber} condivisa con il PDF allegato!`);
-      } catch(shareErr) {
-        if (shareErr.name !== 'AbortError') {
-          // Fallback to download + mailto
-          doc.save(pdfFileName);
-          window.open(`mailto:rahal.essalhi@balconidolciaria.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyWithNote)}`, '_self');
-        }
-      }
-    } else {
-      // Fallback: download PDF + open mailto
-      doc.save(pdfFileName);
-      window.open(`mailto:rahal.essalhi@balconidolciaria.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyWithNote)}`, '_self');
-      alert(`✅ Richiesta N°${requestNumber} preparata!\n\nIl PDF "${pdfFileName}" è stato scaricato.\nSi aprirà il client email pre-compilato.\n\nAllega il PDF prima di inviare.`);
-    }
+    const bodyWithNote = emailBody + `\n\n---\nN° richiesta: ${requestNumber}\nFile PDF: ${pdfFileName}\n(Allegare il PDF scaricato prima di inviare)`;
+    const mailtoUrl = `mailto:rahal.essalhi@balconidolciaria.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyWithNote)}`;
+    const a = document.createElement('a');
+    a.href = mailtoUrl;
+    a.click();
+    alert(`✅ Richiesta N°${requestNumber} preparata!\n\nIl PDF "${pdfFileName}" è stato scaricato.\nIl client email si aprirà pre-compilato.\n\nAllega il PDF prima di inviare.`);
   }
 }
 
