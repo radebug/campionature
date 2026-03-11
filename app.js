@@ -283,78 +283,59 @@ function updateCartUIForRole() {
   const cartForm = document.querySelector('.cart-form');
   if (!cartForm) return;
 
-  // Show/hide the cart form fields based on role
-  const shipDetailsTitle = cartForm.querySelector('.cart-form-title');
-  const grid2blocks = cartForm.querySelectorAll('.grid2');
-  const btnCreate = document.getElementById('btnCreateShipment');
-  const cartActionRow = cartForm.querySelector('.cart-action-row');
-  let btnSendSampling = document.getElementById('btnSendSamplingRequest');
+  // Elements that belong to the admin/normal shipment form
+  const adminEls = [
+    cartForm.querySelector('.cart-form-title'),
+    ...Array.from(cartForm.querySelectorAll('.grid2')),
+    document.getElementById('btnCreateShipment'),
+    cartForm.querySelector('.cart-action-row'),
+  ];
 
   if (comm) {
-    // Hide shipment admin fields
-    if (shipDetailsTitle) shipDetailsTitle.style.display = 'none';
-    grid2blocks.forEach(g => g.style.display = 'none');
-    if (btnCreate) btnCreate.style.display = 'none';
-    if (cartActionRow) cartActionRow.style.display = 'none';
+    // Hide all normal shipment fields
+    adminEls.forEach(el => { if (el) el.style.display = 'none'; });
 
-    // Show reference + email fields for commerciale
-    let commFields = document.getElementById('comm-fields');
-    if (!commFields) {
-      commFields = document.createElement('div');
+    // Create comm-fields block if not yet present
+    if (!document.getElementById('comm-fields')) {
+      const commFields = document.createElement('div');
       commFields.id = 'comm-fields';
       commFields.innerHTML = `
-        <div class="cart-form-title">Richiesta Campionatura</div>
-        <div class="grid2" style="display:grid">
-          <label class="row">
-            <span>Riferimento <span style="color:#e74c3c">*</span></span>
-            <input id="commReference" type="text" placeholder="Nome / riferimento" required />
+        <div class="cart-form-title" style="margin-bottom:10px">Richiesta Campionatura</div>
+        <label class="row" style="margin-bottom:8px">
+          <span>Riferimento <span style="color:#e74c3c">*</span></span>
+          <input id="commReference" type="text" placeholder="Nome / riferimento" autocomplete="off" />
+        </label>
+        <label class="row" style="margin-bottom:8px">
+          <span>Email <span style="color:#e74c3c">*</span></span>
+          <input id="commEmail" type="email" placeholder="tua.email@esempio.com" autocomplete="off" />
+        </label>
+        <div style="margin:10px 0 8px; background:#f4f6f8; border-radius:8px; padding:10px 12px; font-size:13px;">
+          <div style="font-weight:600; margin-bottom:8px;">📤 Modalità invio email</div>
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin-bottom:6px;">
+            <input type="radio" name="commSendMode" value="auto" ${EMAILJS_CONFIGURED ? 'checked' : ''} style="width:auto;margin-top:2px" />
+            <span><b>Automatico</b> — invia direttamente senza client email${!EMAILJS_CONFIGURED ? '<br><small style="color:#e67e22">⚠ Configura EmailJS in app.js per abilitare</small>' : ''}</span>
           </label>
-          <label class="row">
-            <span>Email <span style="color:#e74c3c">*</span></span>
-            <input id="commEmail" type="email" placeholder="tua.email@esempio.com" required />
-          </label>
-        </div>
-        <div id="comm-send-mode" style="margin:8px 0 4px 0; background:var(--bg2,#f4f6f8); border-radius:8px; padding:10px 12px; font-size:13px;">
-          <div style="font-weight:600; margin-bottom:6px; color:var(--text,#333);">📤 Modalità invio email</div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:4px;">
-            <input type="radio" name="commSendMode" id="commSendAuto" value="auto" ${EMAILJS_CONFIGURED ? 'checked' : ''} style="width:auto" />
-            <span>
-              <b>Automatico</b> — invia direttamente senza aprire il client email
-              ${!EMAILJS_CONFIGURED ? '<br><small style="color:#e67e22">⚠ Configura EmailJS in app.js per abilitare questa opzione</small>' : ''}
-            </span>
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-            <input type="radio" name="commSendMode" id="commSendManual" value="manual" ${!EMAILJS_CONFIGURED ? 'checked' : ''} style="width:auto" />
-            <span><b>Manuale</b> — scarica il PDF e apre il client email pre-compilato</span>
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+            <input type="radio" name="commSendMode" value="manual" ${!EMAILJS_CONFIGURED ? 'checked' : ''} style="width:auto;margin-top:2px" />
+            <span><b>Manuale</b> — scarica PDF e apre il client email pre-compilato</span>
           </label>
         </div>
+        <button class="btn primary" type="button" id="btnSendSamplingRequest" style="width:100%;margin-top:4px">
+          📧 Invia Richiesta Campionatura
+        </button>
       `;
-      cartForm.insertBefore(commFields, cartForm.querySelector('.smallNote') || cartForm.firstChild);
+      // Insert at top of cart-form, before everything else
+      cartForm.insertBefore(commFields, cartForm.firstChild);
+      document.getElementById('btnSendSamplingRequest').addEventListener('click', sendSamplingRequest);
     }
-    commFields.style.display = '';
 
-    // Show "Invia Richiesta Campionatura" button
-    if (!btnSendSampling) {
-      btnSendSampling = document.createElement('button');
-      btnSendSampling.className = 'btn primary';
-      btnSendSampling.type = 'button';
-      btnSendSampling.id = 'btnSendSamplingRequest';
-      btnSendSampling.textContent = '📧 Invia Richiesta Campionatura';
-      btnSendSampling.addEventListener('click', sendSamplingRequest);
-      const summaryNote = cartForm.querySelector('.smallNote');
-      if (summaryNote) cartForm.insertBefore(btnSendSampling, summaryNote);
-      else cartForm.appendChild(btnSendSampling);
-    }
-    btnSendSampling.style.display = '';
+    document.getElementById('comm-fields').style.display = '';
+
   } else {
-    // Restore normal admin/viewer view
-    if (shipDetailsTitle) shipDetailsTitle.style.display = '';
-    grid2blocks.forEach(g => g.style.display = '');
-    if (btnCreate) btnCreate.style.display = '';
-    if (cartActionRow) cartActionRow.style.display = '';
+    // Restore normal admin view
+    adminEls.forEach(el => { if (el) el.style.display = ''; });
     const commFields = document.getElementById('comm-fields');
     if (commFields) commFields.style.display = 'none';
-    if (btnSendSampling) btnSendSampling.style.display = 'none';
   }
 }
 
