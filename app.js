@@ -1966,19 +1966,25 @@ async function confirmCommRequest(requestId) {
     return;
   }
 
-  // Scale stock FIFO
+  // Scale stock FIFO — opera direttamente sui lotti originali in p.lots
   for (const item of (r.items || [])) {
     const p = state.products.find(x => x.id === item.productId);
     if (!p) continue;
     let remaining = item.unitMode === 'ct' ? (item.qty * (p.ctSize || 1)) : item.qty;
-    const lots = normalizeLots((p.lots || []).filter(l => !l.ordered)).sort((a,b) => a.expiry.localeCompare(b.expiry));
-    for (const lot of lots) {
+    // Ordina i lotti disponibili per scadenza (FIFO) ma usa i riferimenti originali
+    const availLotKeys = normalizeLots((p.lots || []).filter(l => !l.ordered))
+      .sort((a, b) => a.expiry.localeCompare(b.expiry))
+      .map(l => l.expiry);
+    for (const expiry of availLotKeys) {
       if (remaining <= 0) break;
+      const lot = p.lots.find(l => !l.ordered && l.expiry === expiry);
+      if (!lot) continue;
       const take = Math.min(lot.qty, remaining);
       lot.qty -= take;
       remaining -= take;
     }
-    p.lots = normalizeLots((p.lots || []).filter(l => l.qty > 0 || l.ordered));
+    // Rimuovi lotti a zero (non ordinati)
+    p.lots = (p.lots || []).filter(l => l.qty > 0 || l.ordered);
   }
 
   // Mark as confirmed
@@ -2200,16 +2206,69 @@ function exportShipmentDraftPDF(draft) {
   if (!draft || !draft.items?.length) { alert("Cart is empty."); return; }
   const jspdfNs = window.jspdf;
   if (!jspdfNs?.jsPDF) { alert("PDF library not loaded."); return; }
-  const doc = new jspdfNs.jsPDF(); let y = 16;
-  doc.setFontSize(16); doc.text(`Shipment ${draft.id}`, 14, y); y += 8;
-  doc.setFontSize(11);
-  [`Date: ${draft.date}`, `Destination: ${draft.destination || '-'}`, `Recipient: ${draft.recipient || '-'}`, `Reference: ${draft.reference || '-'}`, `Notes: ${draft.notes || '-'}`, `Extra UE / DHL: ${draft.extraUE ? 'Yes' : 'No'}`].forEach(line => { doc.text(line, 14, y); y += 6; });
-  y += 2;
+  const doc = new jspdfNs.jsPDF();
+  let y = 18;
+
+  // Header bar
+  doc.setFillColor(19, 25, 33);
+  doc.rect(0, 0, 210, 28, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(16); doc.setFont(undefined, 'bold');
+  doc.text('Campionatura — Balconi Dolciaria', 14, 12);
+  doc.setFontSize(10); doc.setFont(undefined, 'normal');
+  doc.text(`ID: ${draft.id}  |  Data: ${draft.date || new Date().toLocaleDateString('it-IT')}`, 14, 21);
+  doc.setTextColor(0, 0, 0); y = 38;
+
+  // Details section
+  doc.setFontSize(12); doc.setFont(undefined, 'bold');
+  doc.text('Dettagli Spedizione', 14, y); y += 6;
+  doc.setDrawColor(200, 200, 200); doc.line(14, y, 196, y); y += 5;
+  doc.setFontSize(10); doc.setFont(undefined, 'normal');
+  const details = [
+    ['Destinazione',   draft.destination || '—'],
+    ['Destinatario',   draft.recipient   || '—'],
+    ['Riferimento',    draft.reference   || '—'],
+    ['Note',           draft.notes       || '—'],
+    ['Extra UE / DHL', draft.extraUE ? 'Sì' : 'No'],
+  ];
+  for (const [label, val] of details) {
+    doc.setFont(undefined, 'bold'); doc.text(`${label}:`, 14, y);
+    doc.setFont(undefined, 'normal'); doc.text(String(val), 62, y);
+    y += 6;
+  }
+  y += 4;
+
+  // Products table
+  doc.setFontSize(12); doc.setFont(undefined, 'bold');
+  doc.text('Prodotti', 14, y); y += 6;
+  doc.setDrawColor(200, 200, 200); doc.line(14, y, 196, y); y += 5;
+
+  // Table header
+  doc.setFillColor(240, 242, 242); doc.rect(14, y - 3, 182, 8, 'F');
+  doc.setFontSize(10); doc.setFont(undefined, 'bold');
+  doc.text('#',        16,  y + 3);
+  doc.text('Prodotto', 24,  y + 3);
+  doc.text('Lotto',    112, y + 3);
+  doc.text('Qty',      148, y + 3);
+  doc.text('Modalità', 163, y + 3);
+  doc.text('Unità',    185, y + 3);
+  y += 10;
+
+  doc.setFont(undefined, 'normal');
   draft.items.forEach((it, i) => {
-    [`${i+1}. ${it.productName}`, `   Lot: ${it.lotExpiry === '__unknown__' ? 'Unknown' : it.lotExpiry}`, `   Mode: ${it.unitMode}   Qty: ${it.qty}   Units: ${it.unitsQty}`].forEach(line => {
-      if (y > 280) { doc.addPage(); y = 16; } doc.text(line, 14, y); y += 6;
-    }); y += 2;
+    if (y > 275) { doc.addPage(); y = 16; }
+    const bg = i % 2 === 0 ? [255, 255, 255] : [248, 250, 250];
+    doc.setFillColor(...bg); doc.rect(14, y - 4, 182, 8, 'F');
+    const lot = it.lotExpiry === '__unknown__' ? 'N/D' : (it.lotExpiry || '—');
+    doc.text(String(i + 1),                     16,  y + 1);
+    doc.text(it.productName.substring(0, 40),   24,  y + 1);
+    doc.text(lot,                               112, y + 1);
+    doc.text(String(it.qty),                    150, y + 1);
+    doc.text(it.unitMode === 'ct' ? 'CT' : 'u.',163, y + 1);
+    doc.text(String(it.unitsQty || '—'),        185, y + 1);
+    y += 8;
   });
+
   doc.save(`${draft.id}.pdf`);
 }
 
