@@ -220,15 +220,18 @@ body {
   min-height: calc(100vh - 80px);
 }
 
-/* When commerciale is logged in: wider cart, no left sidebar needed */
+/* When commerciale is logged in: wider cart, hide left sidebar */
 body.role-commerciale .layout {
-  grid-template-columns: 200px 1fr 480px;
+  grid-template-columns: 0 1fr 620px;
+}
+body.role-commerciale .sidebar {
+  display: none;
 }
 body.role-commerciale .cart-sidebar {
   min-width: 0;
 }
 body.role-commerciale .shipmentCartGrid {
-  grid-template-columns: 1fr 90px 80px auto;
+  grid-template-columns: 1fr 100px 90px auto;
 }
 body.role-commerciale .shipmentCartItemName {
   font-size: 14px;
