@@ -337,24 +337,23 @@ function updateCartUIForRole() {
             </label>
           </div>
         </label>
-        <div style="margin:10px 0 8px; background:#f4f6f8; border-radius:8px; padding:10px 12px; font-size:13px;">
-          <div style="font-weight:600; margin-bottom:8px;">📤 Modalità invio email</div>
-          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin-bottom:6px;">
-            <input type="radio" name="commSendMode" value="auto" ${EMAILJS_CONFIGURED ? 'checked' : ''} style="width:auto;margin-top:2px" />
-            <span><b>Automatico</b> — invia direttamente senza client email${!EMAILJS_CONFIGURED ? '<br><small style="color:#e67e22">⚠ Configura EmailJS in app.js per abilitare</small>' : ''}</span>
-          </label>
-          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
-            <input type="radio" name="commSendMode" value="manual" ${!EMAILJS_CONFIGURED ? 'checked' : ''} style="width:auto;margin-top:2px" />
-            <span><b>Manuale</b> — scarica PDF e apre il client email pre-compilato</span>
-          </label>
+        <label class="row" style="margin-bottom:8px">
+          <span>Note</span>
+          <textarea id="commNotes" rows="2" placeholder="Eventuali note o istruzioni aggiuntive…" style="resize:vertical;font-size:12px;padding:6px 8px"></textarea>
+        </label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button class="btn primary" type="button" id="btnSendSamplingRequest" style="flex:1">
+            📧 Invia Richiesta
+          </button>
+          <button class="btn ghost danger" type="button" id="btnClearCommCart" style="white-space:nowrap" title="Svuota carrello e campi">
+            🗑 Clear
+          </button>
         </div>
-        <button class="btn primary" type="button" id="btnSendSamplingRequest" style="width:100%;margin-top:4px">
-          📧 Invia Richiesta Campionatura
-        </button>
       `;
       // Insert at top of cart-form, before everything else
       cartForm.insertBefore(commFields, cartForm.firstChild);
       document.getElementById('btnSendSamplingRequest').addEventListener('click', sendSamplingRequest);
+      document.getElementById('btnClearCommCart').addEventListener('click', clearCommCart);
 
       // "Il prima possibile" checkbox disables date field
       document.getElementById('commAsSoonAsPossible').addEventListener('change', function() {
@@ -382,6 +381,7 @@ async function sendSamplingRequest() {
   const reference   = (document.getElementById('commReference')?.value || '').trim();
   const destination = (document.getElementById('commDestination')?.value || '').trim();
   const address     = (document.getElementById('commAddress')?.value || '').trim();
+  const notes       = (document.getElementById('commNotes')?.value || '').trim();
   const asap        = document.getElementById('commAsSoonAsPossible')?.checked;
   const delivDate   = asap ? 'Il prima possibile' : (document.getElementById('commDeliveryDate')?.value || '').trim();
 
@@ -389,14 +389,9 @@ async function sendSamplingRequest() {
   if (!email)     { alert("Il campo Email è obbligatorio."); document.getElementById('commEmail')?.focus(); return; }
   if (!reference) { alert("Il campo Riferimento è obbligatorio."); document.getElementById('commReference')?.focus(); return; }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert("Inserisci un indirizzo email valido."); document.getElementById('commEmail')?.focus(); return; }
+  if (!EMAILJS_CONFIGURED) { alert("⚠ EmailJS non è configurato. Contatta l'amministratore."); return; }
 
-  const sendMode = document.querySelector('input[name="commSendMode"]:checked')?.value || 'manual';
-  if (sendMode === 'auto' && !EMAILJS_CONFIGURED) {
-    alert("⚠ EmailJS non è configurato.\nUsa la modalità manuale.");
-    return;
-  }
-
-  // ---- Numero progressivo (DEVE stare qui, prima del PDF) ----
+  // ---- Numero progressivo (PRIMA del PDF) ----
   const existingRequests = Array.isArray(state?.commercialeRequests) ? state.commercialeRequests : [];
   const requestNumber = existingRequests.length + 1;
 
@@ -419,17 +414,21 @@ async function sendSamplingRequest() {
   doc.text('Dettagli Richiesta', 14, y); y += 6;
   doc.setDrawColor(200, 200, 200); doc.line(14, y, 196, y); y += 5;
   doc.setFontSize(10); doc.setFont(undefined, 'normal');
-  for (const [label, val] of [
+  const detailRows = [
     ['Nome Commerciale', name],
     ['Email', email],
     ['Riferimento / Cliente', reference],
     ['Destinazione', destination || '—'],
     ['Indirizzo', address || '—'],
     ['Campionatura richiesta per il', delivDate || '—'],
-  ]) {
+  ];
+  if (notes) detailRows.push(['Note', notes]);
+  for (const [label, val] of detailRows) {
     doc.setFont(undefined, 'bold'); doc.text(`${label}:`, 14, y);
-    doc.setFont(undefined, 'normal'); doc.text(val, 75, y);
-    y += 6;
+    doc.setFont(undefined, 'normal');
+    const lines = doc.splitTextToSize(val, 110);
+    doc.text(lines, 75, y);
+    y += 6 * lines.length;
   }
   y += 4;
 
@@ -455,13 +454,13 @@ async function sendSamplingRequest() {
   const pdfFileName = `campionatura_N${requestNumber}_${name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
   const pdfBase64   = doc.output('datauristring').split(',')[1];
 
-  // ---- Salva richiesta su Supabase ----
+  // ---- Salva su Supabase ----
   const requestRecord = {
     id: uid('creq'),
     requestNumber,
     createdAt: new Date().toISOString(),
     status: 'pending',
-    name, email, reference, destination, address,
+    name, email, reference, destination, address, notes,
     deliveryDate: delivDate,
     items: shipmentCart.map(item => ({
       productId: item.productId,
@@ -490,8 +489,8 @@ async function sendSamplingRequest() {
   }
 
   // ---- Testo email ----
-  const productList = shipmentCart.map((item, i) =>
-    `  ${i + 1}. ${item.productName} — ${item.qty} ${item.unitMode === 'ct' ? 'CT' : 'unità'}`
+  const productList = shipmentCart.map((it, i) =>
+    `  ${i + 1}. ${it.productName} — ${it.qty} ${it.unitMode === 'ct' ? 'CT' : 'unità'}`
   ).join('\n');
   const emailBody = [
     `${name} ha inviato una richiesta di campionatura (N°${requestNumber}).`,
@@ -502,56 +501,64 @@ async function sendSamplingRequest() {
     `Destinazione: ${destination || '—'}`,
     `Indirizzo: ${address || '—'}`,
     `Campionatura richiesta per il: ${delivDate || '—'}`,
+    notes ? `Note: ${notes}` : null,
     ``,
     `--- PRODOTTI RICHIESTI ---`,
     productList,
-  ].join('\n');
+  ].filter(l => l !== null).join('\n');
 
-  // ---- Invia ----
-  if (sendMode === 'auto') {
-    const btn = document.getElementById('btnSendSamplingRequest');
-    const origText = btn?.textContent;
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ Invio in corso…'; }
-    try {
-      if (!window.emailjs) {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
-          s.onload = resolve; s.onerror = reject;
-          document.head.appendChild(s);
-        });
-      }
-      window.emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
-      await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-        to_email:       'rahal.essalhi@balconidolciaria.com',
-        from_name:      name,
-        from_email:     email,
-        subject:        `Richiesta campionatura N°${requestNumber} — ${name} — ${reference}`,
-        request_number: String(requestNumber),
-        reference,
-        destination:    destination || '—',
-        address:        address || '—',
-        delivery_date:  delivDate || '—',
-        product_list:   productList,
-        date:           new Date().toLocaleDateString('it-IT'),
-        message:        emailBody,
+  // ---- Invia via EmailJS ----
+  const btn = document.getElementById('btnSendSamplingRequest');
+  const origText = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Invio in corso…'; }
+  try {
+    if (!window.emailjs) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
+        s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
       });
-      alert(`✅ Richiesta N°${requestNumber} inviata!`);
-    } catch(err) {
-      alert(`❌ Invio fallito: ${err?.text || err?.message || String(err)}\n\nProva con la modalità manuale.`);
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = origText; }
     }
-  } else {
-    // Manuale: scarica PDF + apre client email precompilato
+    window.emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+    await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email:       'rahal.essalhi@balconidolciaria.com',
+      from_name:      name,
+      from_email:     email,          // mittente apparente = email del commerciale
+      reply_to:       email,          // rispondi a = email del commerciale
+      subject:        `Richiesta campionatura N°${requestNumber} — ${name} — ${reference}`,
+      request_number: String(requestNumber),
+      reference,
+      destination:    destination || '—',
+      address:        address || '—',
+      delivery_date:  delivDate || '—',
+      notes:          notes || '—',
+      product_list:   productList,
+      date:           new Date().toLocaleDateString('it-IT'),
+      message:        emailBody,
+    });
+    // Scarica sempre il PDF come ricevuta
     doc.save(pdfFileName);
-    const subject      = `Richiesta campionatura N°${requestNumber} — ${name} — ${reference}`;
-    const bodyWithNote = emailBody + `\n\n---\nN° richiesta: ${requestNumber}\nFile PDF: ${pdfFileName}\n(Allegare il PDF scaricato prima di inviare)`;
-    const a = document.createElement('a');
-    a.href = `mailto:rahal.essalhi@balconidolciaria.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyWithNote)}`;
-    a.click();
-    alert(`✅ Richiesta N°${requestNumber} preparata!\n\nIl PDF "${pdfFileName}" è stato scaricato.\nIl client email si aprirà pre-compilato.\n\nAllega il PDF prima di inviare.`);
+    alert(`✅ Richiesta N°${requestNumber} inviata!\nIl PDF è stato scaricato come ricevuta.`);
+  } catch(err) {
+    alert(`❌ Invio fallito: ${err?.text || err?.message || String(err)}`);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
+}
+
+function clearCommCart() {
+  if (!confirm('Svuotare il carrello e azzerare tutti i campi?')) return;
+  shipmentCart = [];
+  // Reset form fields
+  ['commName','commEmail','commReference','commDestination','commAddress','commDeliveryDate','commNotes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.value = ''; el.disabled = false; }
+  });
+  const asap = document.getElementById('commAsSoonAsPossible');
+  if (asap) asap.checked = false;
+  renderCart();
+  updateCartUIForRole();
 }
 
 
@@ -1766,7 +1773,7 @@ function createShipmentFromCart() {
   }
   state.shipments.unshift({ id: draft.id, date: draft.date, destination: draft.destination, recipient: draft.recipient, reference: draft.reference, notes: draft.notes, extraUE: draft.extraUE, createdAt: draft.createdAt, items: draft.items });
   setDirty(true);
-  exportShipmentDraftPDF(draft); exportShipmentDraftExcel(draft);
+  exportShipmentDraftPDF(draft);
   if (draft.extraUE) exportDHLList(draft);
   shipmentCart = []; render(); renderShipmentHistory();
 }
