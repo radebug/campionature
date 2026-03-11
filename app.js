@@ -1967,29 +1967,113 @@ async function confirmCommRequest(requestId) {
   }
 
   // Scale stock FIFO — opera direttamente sui lotti originali in p.lots
+  // Registra anche i lotti prelevati per includerli nel PDF
+  const itemsWithLots = [];
   for (const item of (r.items || [])) {
     const p = state.products.find(x => x.id === item.productId);
     if (!p) continue;
     let remaining = item.unitMode === 'ct' ? (item.qty * (p.ctSize || 1)) : item.qty;
-    // Ordina i lotti disponibili per scadenza (FIFO) ma usa i riferimenti originali
     const availLotKeys = normalizeLots((p.lots || []).filter(l => !l.ordered))
       .sort((a, b) => a.expiry.localeCompare(b.expiry))
       .map(l => l.expiry);
+    const lotsUsed = [];
     for (const expiry of availLotKeys) {
       if (remaining <= 0) break;
       const lot = p.lots.find(l => !l.ordered && l.expiry === expiry);
       if (!lot) continue;
       const take = Math.min(lot.qty, remaining);
+      lotsUsed.push({ expiry, units: take });
       lot.qty -= take;
       remaining -= take;
     }
-    // Rimuovi lotti a zero (non ordinati)
     p.lots = (p.lots || []).filter(l => l.qty > 0 || l.ordered);
+    itemsWithLots.push({ ...item, lotsUsed });
   }
 
   // Mark as confirmed
   r.status = 'confirmed';
   r.confirmedAt = new Date().toISOString();
+
+  // Genera nuovo PDF con i lotti assegnati
+  try {
+    const jspdfNs = window.jspdf;
+    if (jspdfNs?.jsPDF) {
+      const doc = new jspdfNs.jsPDF();
+      let y = 18;
+
+      // Header
+      doc.setFillColor(19, 25, 33);
+      doc.rect(0, 0, 210, 28, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(16); doc.setFont(undefined, 'bold');
+      doc.text('Richiesta Campionatura — Balconi Dolciaria', 14, 12);
+      doc.setFontSize(10); doc.setFont(undefined, 'normal');
+      doc.text(`N° ${r.requestNumber}  |  Confermata il: ${new Date().toLocaleDateString('it-IT')}`, 14, 21);
+      doc.setTextColor(0, 0, 0); y = 38;
+
+      // Dettagli
+      doc.setFontSize(12); doc.setFont(undefined, 'bold');
+      doc.text('Dettagli Richiesta', 14, y); y += 6;
+      doc.setDrawColor(200, 200, 200); doc.line(14, y, 196, y); y += 5;
+      doc.setFontSize(10); doc.setFont(undefined, 'normal');
+      for (const [label, val] of [
+        ['Nome Commerciale',         r.name        || '—'],
+        ['Email',                    r.email       || '—'],
+        ['Riferimento / Cliente',    r.reference   || '—'],
+        ['Destinazione',             r.destination || '—'],
+        ['Indirizzo',                r.address     || '—'],
+        ['Campionatura richiesta per il', r.deliveryDate || '—'],
+        ...(r.notes ? [['Note', r.notes]] : []),
+      ]) {
+        doc.setFont(undefined, 'bold'); doc.text(`${label}:`, 14, y);
+        doc.setFont(undefined, 'normal');
+        const lines = doc.splitTextToSize(String(val), 110);
+        doc.text(lines, 75, y);
+        y += 6 * lines.length;
+      }
+      y += 4;
+
+      // Tabella prodotti con lotti
+      doc.setFontSize(12); doc.setFont(undefined, 'bold');
+      doc.text('Prodotti Assegnati', 14, y); y += 6;
+      doc.setDrawColor(200, 200, 200); doc.line(14, y, 196, y); y += 5;
+
+      // Header tabella
+      doc.setFillColor(240, 242, 242); doc.rect(14, y - 3, 182, 8, 'F');
+      doc.setFontSize(10); doc.setFont(undefined, 'bold');
+      doc.text('#',        16,  y + 3);
+      doc.text('Prodotto', 24,  y + 3);
+      doc.text('Lotto',    110, y + 3);
+      doc.text('Qty',      152, y + 3);
+      doc.text('Modalità', 165, y + 3);
+      y += 10;
+
+      doc.setFont(undefined, 'normal');
+      let rowIdx = 0;
+      for (const item of itemsWithLots) {
+        const lots = item.lotsUsed || [];
+        const lotStr = lots.length
+          ? lots.map(l => `${l.expiry} (${l.units} u.)`).join(', ')
+          : '—';
+        if (y > 275) { doc.addPage(); y = 16; }
+        const bg = rowIdx % 2 === 0 ? [255, 255, 255] : [248, 250, 250];
+        doc.setFillColor(...bg); doc.rect(14, y - 4, 182, 8, 'F');
+        doc.text(String(rowIdx + 1),                       16,  y + 1);
+        doc.text(item.productName.substring(0, 38),        24,  y + 1);
+        const lotLines = doc.splitTextToSize(lotStr, 38);
+        doc.text(lotLines,                                 110, y + 1);
+        doc.text(String(item.qty),                         154, y + 1);
+        doc.text(item.unitMode === 'ct' ? 'CT' : 'unità', 165, y + 1);
+        y += 8 * lotLines.length;
+        rowIdx++;
+      }
+
+      const newPdfFileName = `campionatura_N${r.requestNumber}_confermata_${new Date().toISOString().slice(0,10)}.pdf`;
+      r.pdfBase64   = doc.output('datauristring').split(',')[1];
+      r.pdfFileName = newPdfFileName;
+      doc.save(newPdfFileName); // scarica automaticamente il PDF con i lotti
+    }
+  } catch(pdfErr) { console.warn('PDF generation failed:', pdfErr); }
 
   setDirty(true);
   render();
