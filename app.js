@@ -457,14 +457,15 @@ async function sendSamplingRequest() {
     y += 8;
   });
 
+  // ---- Numero progressivo (deve essere calcolato prima del nome file) ----
+  const existingRequests = Array.isArray(state?.commercialeRequests) ? state.commercialeRequests : [];
+  const requestNumber = existingRequests.length + 1;
+
   const pdfFileName = `campionatura_N${requestNumber}_${name.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.pdf`;
   const pdfBase64 = doc.output('datauristring').split(',')[1];
   const pdfBlob = doc.output('blob');
 
   // ---- Save request to Supabase for admin panel ----
-  // Calcola numero progressivo
-  const existingRequests = Array.isArray(state?.commercialeRequests) ? state.commercialeRequests : [];
-  const requestNumber = existingRequests.length + 1;
 
   const requestRecord = {
     id: uid('creq'),
@@ -1384,6 +1385,7 @@ function openInfoDlg(productId) {
 }
 
 function openShipmentHistoryDlg() {
+  if (!isAdmin()) { alert("Login come admin richiesto per visualizzare lo storico."); return; }
   if (!state) return;
   renderShipmentHistory();
   els.shipHistDlg.showModal();
@@ -1846,6 +1848,7 @@ function renderShipmentHistory() {
 
 /* =================== RICHIESTE COMMERCIALI =================== */
 function openCommRequestsDlg() {
+  if (!isAdmin()) { alert("Login come admin richiesto."); return; }
   const dlg = document.getElementById('commRequestsDlg');
   if (!dlg) return;
   renderCommRequests();
@@ -2146,6 +2149,7 @@ function importCatalogueFromExcel(file) {
 
 /* Excel export */
 function exportCatalogueExcel() {
+  if (!isAdmin()) { alert("Login come admin richiesto per esportare."); return; }
   if (!state) return;
   if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
   const wb = XLSX.utils.book_new();
