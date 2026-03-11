@@ -516,19 +516,19 @@ async function sendSamplingRequest() {
       window.emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
       await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
         to_email: 'rahal.essalhi@balconidolciaria.com',
-        from_name: name, from_email: email,
+        from_name: name,
+        from_email: email,
         subject: `Richiesta campionatura N°${requestNumber} — ${name} — ${reference}`,
-        reference, destination, address,
+        reference,
+        destination: destination || '—',
+        address: address || '—',
         request_number: String(requestNumber),
         delivery_date: delivDate || '—',
         product_list: productList,
         date: new Date().toLocaleDateString('it-IT'),
         message: emailBody,
-        pdf_attachment: pdfBase64,
-        pdf_name: pdfFileName,
       });
-      doc.save(pdfFileName);
-      alert(`✅ Richiesta N°${requestNumber} inviata automaticamente!\n\nIl PDF è stato anche scaricato come ricevuta.`);
+      alert(`✅ Richiesta N°${requestNumber} inviata a rahal.essalhi@balconidolciaria.com!`);
     } catch(err) {
       alert(`❌ Invio automatico fallito: ${err?.text || err?.message || String(err)}\n\nProva con la modalità manuale.`);
     } finally {
