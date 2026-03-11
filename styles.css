@@ -220,28 +220,9 @@ body {
   min-height: calc(100vh - 80px);
 }
 
-/* When commerciale is logged in: wider cart, hide left sidebar */
-body.role-commerciale .layout {
-  grid-template-columns: 0 1fr 620px;
-}
-body.role-commerciale .sidebar {
-  display: none;
-}
-body.role-commerciale .cart-sidebar {
-  min-width: 0;
-}
+/* When commerciale is logged in: same cart size as omaggi */
 body.role-commerciale .shipmentCartGrid {
-  grid-template-columns: 1fr 100px 90px auto;
-}
-body.role-commerciale .shipmentCartItemName {
-  font-size: 14px;
-}
-body.role-commerciale .shipmentCartThumb {
-  width: 72px;
-  height: 72px;
-}
-body.role-commerciale .shipmentCartItemTop {
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 1fr 90px 80px auto;
 }
 
 /* ============================
