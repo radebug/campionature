@@ -225,6 +225,28 @@ body.role-commerciale .shipmentCartGrid {
   grid-template-columns: 1fr 90px 80px auto;
 }
 
+/* Commerciale: taller product list, compressed form */
+body.role-commerciale .cart-items {
+  flex: 2.5;
+  min-height: 0;
+}
+body.role-commerciale .cart-form {
+  flex-shrink: 1;
+  overflow-y: auto;
+  max-height: 55vh;
+}
+body.role-commerciale .cart-form .row {
+  margin-bottom: 5px;
+}
+body.role-commerciale .cart-form input {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+body.role-commerciale #comm-send-mode {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
 /* ============================
    LEFT SIDEBAR
    ============================ */

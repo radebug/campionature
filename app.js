@@ -409,7 +409,7 @@ async function sendSamplingRequest() {
   doc.setFontSize(16); doc.setFont(undefined, 'bold');
   doc.text('Richiesta Campionatura — Balconi Dolciaria', 14, 12);
   doc.setFontSize(10); doc.setFont(undefined, 'normal');
-  doc.text(`Data invio: ${new Date().toLocaleDateString('it-IT')}`, 14, 21);
+  doc.text(`N° ${requestNumber}  |  Data: ${new Date().toLocaleDateString('it-IT')}`, 14, 21);
   doc.setTextColor(0, 0, 0); y = 38;
 
   // Details section
@@ -457,17 +457,23 @@ async function sendSamplingRequest() {
     y += 8;
   });
 
-  const pdfFileName = `campionatura_${name.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.pdf`;
+  const pdfFileName = `campionatura_N${requestNumber}_${name.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.pdf`;
   const pdfBase64 = doc.output('datauristring').split(',')[1];
   const pdfBlob = doc.output('blob');
 
   // ---- Save request to Supabase for admin panel ----
+  // Calcola numero progressivo
+  const existingRequests = Array.isArray(state?.commercialeRequests) ? state.commercialeRequests : [];
+  const requestNumber = existingRequests.length + 1;
+
   const requestRecord = {
     id: uid('creq'),
+    requestNumber,
     createdAt: new Date().toISOString(),
+    status: 'pending', // 'pending' | 'confirmed'
     name, email, reference, destination, address,
     deliveryDate: delivDate,
-    items: shipmentCart.map(item => ({ productName: item.productName, qty: item.qty, unitMode: item.unitMode })),
+    items: shipmentCart.map(item => ({ productId: item.productId, productName: item.productName, qty: item.qty, unitMode: item.unitMode })),
     pdfBase64,
     pdfFileName,
   };
@@ -510,7 +516,9 @@ async function sendSamplingRequest() {
       await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
         to_email: 'rahal.essalhi@balconidolciaria.com',
         from_name: name, from_email: email,
+        subject: `Richiesta campionatura N°${requestNumber} — ${name} — ${reference}`,
         reference, destination, address,
+        request_number: String(requestNumber),
         delivery_date: delivDate || '—',
         product_list: productList,
         date: new Date().toLocaleDateString('it-IT'),
@@ -519,20 +527,39 @@ async function sendSamplingRequest() {
         pdf_name: pdfFileName,
       });
       doc.save(pdfFileName);
-      alert(`✅ Richiesta inviata automaticamente!\n\nIl PDF è stato anche scaricato come ricevuta.`);
+      alert(`✅ Richiesta N°${requestNumber} inviata automaticamente!\n\nIl PDF è stato anche scaricato come ricevuta.`);
     } catch(err) {
       alert(`❌ Invio automatico fallito: ${err?.text || err?.message || String(err)}\n\nProva con la modalità manuale.`);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = origText; }
     }
   } else {
-    // Manual: download PDF + open mailto with PDF as data URI link in body
-    doc.save(pdfFileName);
-    const subject = encodeURIComponent(`Richiesta campionatura — ${name} — ${reference}`);
-    const bodyWithNote = emailBody + `\n\n---\nPDF allegato: ${pdfFileName}\n(Il PDF è stato scaricato automaticamente — allegarlo prima di inviare)`;
-    const mailto = `mailto:rahal.essalhi@balconidolciaria.com?subject=${subject}&body=${encodeURIComponent(bodyWithNote)}`;
-    window.open(mailto, '_self');
-    alert(`✅ Richiesta preparata!\n\nIl PDF "${pdfFileName}" è stato scaricato.\nSi aprirà il client email pre-compilato.\n\nRicorda di allegare il PDF prima di inviare.`);
+    // Manual: try Web Share API first (auto-attaches PDF), fallback to mailto
+    const subject = `Richiesta campionatura N°${requestNumber} — ${name} — ${reference}`;
+    const bodyWithNote = emailBody + `\n\n---\nN° richiesta: ${requestNumber}\nPDF allegato: ${pdfFileName}`;
+    const pdfFile = new File([pdfBlob], pdfFileName, { type: 'application/pdf' });
+
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      try {
+        await navigator.share({
+          title: subject,
+          text: bodyWithNote,
+          files: [pdfFile],
+        });
+        alert(`✅ Richiesta N°${requestNumber} condivisa con il PDF allegato!`);
+      } catch(shareErr) {
+        if (shareErr.name !== 'AbortError') {
+          // Fallback to download + mailto
+          doc.save(pdfFileName);
+          window.open(`mailto:rahal.essalhi@balconidolciaria.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyWithNote)}`, '_self');
+        }
+      }
+    } else {
+      // Fallback: download PDF + open mailto
+      doc.save(pdfFileName);
+      window.open(`mailto:rahal.essalhi@balconidolciaria.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyWithNote)}`, '_self');
+      alert(`✅ Richiesta N°${requestNumber} preparata!\n\nIl PDF "${pdfFileName}" è stato scaricato.\nSi aprirà il client email pre-compilato.\n\nAllega il PDF prima di inviare.`);
+    }
   }
 }
 
@@ -1835,11 +1862,11 @@ function renderCommRequests() {
   const all = Array.isArray(state?.commercialeRequests) ? state.commercialeRequests : [];
   const rows = all.filter(r => {
     if (!q) return true;
-    return [r.name, r.email, r.reference, r.destination].join(' ').toLowerCase().includes(q);
+    return [r.name, r.email, r.reference, r.destination, String(r.requestNumber||'')].join(' ').toLowerCase().includes(q);
   });
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#888;padding:20px">Nessuna richiesta trovata.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#888;padding:20px">Nessuna richiesta trovata.</td></tr>`;
     if (countEl) countEl.textContent = '0 richieste';
     return;
   }
@@ -1847,33 +1874,124 @@ function renderCommRequests() {
   for (const r of rows) {
     const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString('it-IT') : '—';
     const products = (r.items || []).map(it => `${it.productName} ×${it.qty} ${it.unitMode === 'ct' ? 'CT' : 'u.'}`).join(', ');
+    const isConfirmed = r.status === 'confirmed';
+    const statusBadge = isConfirmed
+      ? `<span style="background:#d4edda;color:#155724;border:1px solid #c3e6cb;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">✅ Confermata</span>`
+      : `<span style="background:#fff3cd;color:#856404;border:1px solid #ffeeba;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">⏳ In attesa</span>`;
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
+      <td style="font-weight:700;color:var(--accent)">N°${r.requestNumber || '—'}</td>
       <td style="white-space:nowrap">${date}</td>
       <td><b>${escapeHtml(r.name || '—')}</b></td>
       <td style="font-size:12px">${escapeHtml(r.email || '—')}</td>
       <td>${escapeHtml(r.reference || '—')}</td>
       <td>${escapeHtml(r.destination || '—')}</td>
       <td style="white-space:nowrap">${escapeHtml(r.deliveryDate || '—')}</td>
-      <td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(products)}">${escapeHtml(products)}</td>
+      <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(products)}">${escapeHtml(products)}</td>
+      <td>${statusBadge}</td>
       <td>
-        ${r.pdfBase64
-          ? `<button class="btn small primary" type="button" data-act="pdf-dl">📄 PDF</button>`
-          : '<span style="color:#aaa;font-size:12px">n/d</span>'}
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          ${r.pdfBase64 ? `<button class="btn small primary" type="button" data-act="pdf-dl">📄 PDF</button>` : ''}
+          ${!isConfirmed ? `<button class="btn small" style="background:linear-gradient(to bottom,#d4edda,#c3e6cb);border-color:#28a745;color:#155724" type="button" data-act="confirm">✅ Conferma</button>` : ''}
+          <button class="btn small ghost" type="button" data-act="email">📧 Email</button>
+        </div>
       </td>`;
+
+    // PDF download
     if (r.pdfBase64) {
       tr.querySelector('[data-act="pdf-dl"]').addEventListener('click', () => {
-        const jspdfNs = window.jspdf;
-        // Rebuild from base64
         const link = document.createElement('a');
         link.href = 'data:application/pdf;base64,' + r.pdfBase64;
-        link.download = r.pdfFileName || `campionatura_${r.name || 'richiesta'}.pdf`;
+        link.download = r.pdfFileName || `campionatura_N${r.requestNumber || ''}_${r.name || 'richiesta'}.pdf`;
         link.click();
       });
     }
+
+    // Confirm: scale stock
+    if (!isConfirmed) {
+      tr.querySelector('[data-act="confirm"]')?.addEventListener('click', () => confirmCommRequest(r.id));
+    }
+
+    // Email precompilata al commerciale
+    tr.querySelector('[data-act="email"]').addEventListener('click', () => {
+      const productList = (r.items || []).map((it, i) => `  ${i+1}. ${it.productName} — ${it.qty} ${it.unitMode === 'ct' ? 'CT' : 'unità'}`).join('\n');
+      const subject = encodeURIComponent(`Re: Richiesta campionatura N°${r.requestNumber || ''} — ${r.reference || ''}`);
+      const body = encodeURIComponent(
+        `Gentile ${r.name || ''},\n\n` +
+        `In riferimento alla tua richiesta di campionatura N°${r.requestNumber || ''} del ${date}:\n\n` +
+        `Riferimento / Cliente: ${r.reference || '—'}\n` +
+        `Destinazione: ${r.destination || '—'}\n` +
+        `Indirizzo: ${r.address || '—'}\n` +
+        `Consegna richiesta per il: ${r.deliveryDate || '—'}\n\n` +
+        `Prodotti richiesti:\n${productList}\n\n` +
+        `[Inserire qui il messaggio di risposta]\n\n` +
+        `Cordiali saluti,\nBalconi Dolciaria`
+      );
+      window.open(`mailto:${encodeURIComponent(r.email || '')}?subject=${subject}&body=${body}`, '_blank');
+    });
+
     tbody.appendChild(tr);
   }
   if (countEl) countEl.textContent = `${rows.length} richiesta${rows.length === 1 ? '' : 'e'}`;
+}
+
+async function confirmCommRequest(requestId) {
+  if (!isAdmin()) return;
+  const requests = Array.isArray(state?.commercialeRequests) ? state.commercialeRequests : [];
+  const r = requests.find(x => x.id === requestId);
+  if (!r) return;
+  if (r.status === 'confirmed') { alert('Richiesta già confermata.'); return; }
+
+  const productList = (r.items || []).map(it => `${it.productName} ×${it.qty}`).join(', ');
+  if (!confirm(`Confermare la richiesta N°${r.requestNumber} di ${r.name}?\n\n${productList}\n\nLo stock verrà scalato automaticamente.`)) return;
+
+  const errors = [];
+  for (const item of (r.items || [])) {
+    const p = state.products.find(x => x.id === item.productId);
+    if (!p) { errors.push(`Prodotto non trovato: ${item.productName}`); continue; }
+    const requestedUnits = item.unitMode === 'ct' ? (item.qty * (p.ctSize || 1)) : item.qty;
+    const availableLots = normalizeLots((p.lots || []).filter(l => !l.ordered)).sort((a,b) => a.expiry.localeCompare(b.expiry));
+    const totalAvail = availableLots.reduce((s,l) => s + l.qty, 0);
+    if (totalAvail < requestedUnits) {
+      errors.push(`${p.name}: richiesti ${requestedUnits}, disponibili ${totalAvail}`);
+    }
+  }
+  if (errors.length) {
+    alert('⚠ Stock insufficiente per confermare:\n\n' + errors.join('\n') + '\n\nLa richiesta non è stata confermata.');
+    return;
+  }
+
+  // Scale stock FIFO
+  for (const item of (r.items || [])) {
+    const p = state.products.find(x => x.id === item.productId);
+    if (!p) continue;
+    let remaining = item.unitMode === 'ct' ? (item.qty * (p.ctSize || 1)) : item.qty;
+    const lots = normalizeLots((p.lots || []).filter(l => !l.ordered)).sort((a,b) => a.expiry.localeCompare(b.expiry));
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      const take = Math.min(lot.qty, remaining);
+      lot.qty -= take;
+      remaining -= take;
+    }
+    p.lots = normalizeLots((p.lots || []).filter(l => l.qty > 0 || l.ordered));
+  }
+
+  // Mark as confirmed
+  r.status = 'confirmed';
+  r.confirmedAt = new Date().toISOString();
+
+  setDirty(true);
+  render();
+  // Persist to Supabase
+  try {
+    if (supabaseClient) {
+      await supabaseClient.from('catalogue').upsert({ id: CATALOGUE_ROW_ID, data: state, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+    }
+  } catch(e) { console.warn('Supabase save failed:', e); }
+
+  alert(`✅ Richiesta N°${r.requestNumber} confermata!\nLo stock è stato scalato.`);
+  renderCommRequests();
 }
 /* ============================================================ */
 
