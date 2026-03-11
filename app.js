@@ -421,18 +421,19 @@ function wire() {
     const file = els.imgFilePicker.files && els.imgFilePicker.files[0];
     els.imgFilePicker.value = "";
     if (!file) return;
+    els.imgHint.textContent = "⏳ Caricamento immagine...";
+    els.btnPickImage.disabled = true;
     try {
-      if (fs.folderHandle) {
-        const storedName = await copyPickedImageToMedia(file);
-        els.prodImageFileName.value = storedName;
-        els.imgHint.textContent = `Copied to media/${storedName}`;
-      } else {
-        els.prodImageFileName.value = file.name;
-        els.imgHint.textContent = `Now copy that file into media/ as: ${file.name}`;
-      }
-      renderProductPreview({ imageFileName: els.prodImageFileName.value });
+      const { fileName, publicUrl } = await uploadImageToSupabase(file);
+      els.prodImageFileName.value = publicUrl; // salva l'URL pubblico Supabase
+      els.imgHint.textContent = `✅ Caricata: ${fileName}`;
+      renderProductPreview({ imageFileName: publicUrl });
       setDirty(true);
-    } catch (e) { alert("Could not set image: " + (e?.message || e)); }
+    } catch (e) {
+      els.imgHint.textContent = `❌ Errore upload: ${e?.message || e}`;
+    } finally {
+      els.btnPickImage.disabled = false;
+    }
   });
 
   if (els.btnShipments) els.btnShipments.addEventListener("click", openShipmentHistoryDlg);
@@ -699,7 +700,9 @@ function productCard(p) {
 
   const img = node.querySelector(".thumbImg");
   const empty = node.querySelector(".thumbEmpty");
-  const imgPath = p.imageFileName ? `media/${p.imageFileName}` : "";
+  const imgPath = p.imageFileName
+    ? (p.imageFileName.startsWith("http") ? p.imageFileName : `media/${p.imageFileName}`)
+    : "";
   if (imgPath) {
     img.src = imgPath; img.alt = p.name; img.style.display = "block"; empty.style.display = "none";
     img.onerror = () => { img.style.display = "none"; empty.style.display = "flex"; empty.textContent = "Image missing"; };
@@ -866,7 +869,8 @@ function renderProductPreview(p) {
   const fileName = (p?.imageFileName || "").trim();
   if (!fileName) { els.imgPreview.textContent = "No image"; return; }
   const img = document.createElement("img");
-  img.src = `media/${fileName}`; img.alt = "Image";
+  img.src = fileName.startsWith("http") ? fileName : `media/${fileName}`;
+  img.alt = "Image";
   img.onerror = () => { els.imgPreview.textContent = "Image missing"; };
   els.imgPreview.appendChild(img);
 }
@@ -1268,7 +1272,8 @@ function renderShipmentCart() {
     const unitOptions = [`<option value="units" ${item.unitMode !== "ct" ? 'selected' : ''}>Units</option>`];
     if (p.ctSize && p.ctSize > 0) unitOptions.push(`<option value="ct" ${item.unitMode === "ct" ? 'selected' : ''}>Boxes / CT</option>`);
     const fileName = (p.imageFileName || '').trim();
-    const imgHtml = fileName ? `<img class="shipmentCartThumbImg" src="media/${escapeHtml(fileName)}" alt="${escapeHtml(item.productName)}" onerror="this.closest('.shipmentCartThumb').classList.add('is-empty');this.remove()">` : '';
+    const imgSrc = fileName ? (fileName.startsWith("http") ? fileName : `media/${escapeHtml(fileName)}`) : "";
+    const imgHtml = imgSrc ? `<img class="shipmentCartThumbImg" src="${imgSrc}" alt="${escapeHtml(item.productName)}" onerror="this.closest('.shipmentCartThumb').classList.add('is-empty');this.remove()">` : '';
     const thumbClass = fileName ? 'shipmentCartThumb' : 'shipmentCartThumb is-empty';
 
     row.innerHTML = `
@@ -1725,6 +1730,33 @@ function inferCustomsCodeForProduct(p, categories = []) {
 
 function sanitizeFileName(name) { return (name || "").trim().replace(/[\\/:*?\"<>|]+/g, "_") || "image"; }
 function splitBaseExt(name) { const n = name || ""; const i = n.lastIndexOf("."); if (i <= 0) return { base: n, ext: "" }; return { base: n.slice(0, i), ext: n.slice(i) }; }
+
+/* ===================== SUPABASE STORAGE IMAGE UPLOAD ===================== */
+// Il bucket si chiama "media" — crealo su Supabase Dashboard → Storage → New bucket
+// Imposta il bucket come PUBLIC e aggiungi questa policy RLS per l'upload:
+//   INSERT: (auth.role() = 'authenticated')
+
+async function uploadImageToSupabase(file) {
+  if (!supabaseClient) throw new Error("Supabase non inizializzato.");
+
+  const sanitized = sanitizeFileName(file.name || "image");
+  const { base, ext } = splitBaseExt(sanitized);
+
+  // Aggiunge timestamp per evitare collisioni senza chiedere nulla all'utente
+  const fileName = `${base}_${Date.now()}${ext}`;
+
+  const { data, error } = await supabaseClient
+    .storage
+    .from("media")
+    .upload(fileName, file, { upsert: false, contentType: file.type || "image/jpeg" });
+
+  if (error) throw new Error(error.message || "Upload Supabase fallito.");
+
+  // Restituisce l'URL pubblico completo
+  const { data: urlData } = supabaseClient.storage.from("media").getPublicUrl(fileName);
+  return { fileName, publicUrl: urlData.publicUrl };
+}
+/* ======================================================================== */
 
 async function copyPickedImageToMedia(file) {
   if (!fs.folderHandle) throw new Error("Folder mode not enabled.");
