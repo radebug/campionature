@@ -333,7 +333,7 @@ function updateCartUIForRole() {
             <input id="commDeliveryDate" type="text" placeholder="DD/MM/AAAA" style="flex:1" autocomplete="off" />
             <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;font-size:12px;cursor:pointer">
               <input type="checkbox" id="commAsSoonAsPossible" style="width:auto" />
-              Il prima possibile
+              Non ho una data
             </label>
           </div>
         </label>
@@ -355,7 +355,7 @@ function updateCartUIForRole() {
       document.getElementById('btnSendSamplingRequest').addEventListener('click', sendSamplingRequest);
       document.getElementById('btnClearCommCart').addEventListener('click', clearCommCart);
 
-      // "Il prima possibile" checkbox disables date field
+      // "Non ho una data" checkbox disables date field
       document.getElementById('commAsSoonAsPossible').addEventListener('change', function() {
         const dateInput = document.getElementById('commDeliveryDate');
         if (this.checked) { dateInput.value = ''; dateInput.disabled = true; }
@@ -383,7 +383,7 @@ async function sendSamplingRequest() {
   const address     = (document.getElementById('commAddress')?.value || '').trim();
   const notes       = (document.getElementById('commNotes')?.value || '').trim();
   const asap        = document.getElementById('commAsSoonAsPossible')?.checked;
-  const delivDate   = asap ? 'Il prima possibile' : (document.getElementById('commDeliveryDate')?.value || '').trim();
+  const delivDate   = asap ? 'Non ho una data' : (document.getElementById('commDeliveryDate')?.value || '').trim();
 
   if (!name)      { alert("Il campo Nome Commerciale è obbligatorio."); document.getElementById('commName')?.focus(); return; }
   if (!email)     { alert("Il campo Email è obbligatorio."); document.getElementById('commEmail')?.focus(); return; }
