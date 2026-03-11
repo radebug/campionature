@@ -170,6 +170,10 @@ function refreshAuthUI() {
     if (p) p.style.display = "";
   }
 
+  // Apply role class to body for CSS targeting
+  document.body.classList.remove('role-admin', 'role-commerciale', 'role-viewer');
+  if (portalSession?.role) document.body.classList.add('role-' + portalSession.role);
+
   const editable = isAdmin();
   if (els?.btnSave) {
     els.btnSave.disabled = !editable;
@@ -1185,6 +1189,7 @@ function renderProductPreview(p) {
 
 /* Stock */
 function openStockDlg(productId) {
+  if (!isAdmin()) { alert("Login come admin richiesto per modificare lo stock."); return; }
   ui.stockProductId = productId;
   const p = state.products.find(x => x.id === productId);
   if (!p) return;
@@ -1276,6 +1281,7 @@ function receiveOrderedLot(p, lot) {
 }
 
 function adjustStock(dir) {
+  if (!isAdmin()) { alert("Login come admin richiesto per modificare lo stock."); return; }
   const p = state.products.find(x => x.id === ui.stockProductId);
   if (!p) return;
   const expiryText = (els.stockExpiry.value || "").trim();
@@ -1571,7 +1577,7 @@ function renderShipmentCart() {
     return;
   }
 
-  let totalUnits = 0, totalCt = 0;
+  let totalUnits = 0, totalCt = 0, totalKg = 0;
 
   for (const item of shipmentCart) {
     const p = state.products.find(x => x.id === item.productId);
@@ -1648,27 +1654,29 @@ function renderShipmentCart() {
     const requestedUnits = cartItemRequestedUnits(item);
     totalUnits += requestedUnits;
     if (p.ctSize) totalCt += requestedUnits / p.ctSize;
+    if (p.unitWeightKg) totalKg += requestedUnits * Number(p.unitWeightKg);
     box.appendChild(row);
   }
 
   if (els.shipmentCartSummary) els.shipmentCartSummary.textContent = `${shipmentCart.length} line${shipmentCart.length !== 1 ? 's' : ''} · ${totalUnits} units total`;
-  updateCartOverview(totalUnits, totalCt);
+  updateCartOverview(totalUnits, totalCt, totalKg);
 }
 
-function updateCartOverview(totalUnits, totalCt) {
+function updateCartOverview(totalUnits, totalCt, totalKg) {
   if (totalUnits == null) {
-    totalUnits = 0; totalCt = 0;
+    totalUnits = 0; totalCt = 0; totalKg = 0;
     for (const item of shipmentCart) {
       const p = state.products.find(x => x.id === item.productId); if (!p) continue;
       const units = cartItemRequestedUnits(item); totalUnits += units;
       if (p.ctSize) totalCt += units / p.ctSize;
+      if (p.unitWeightKg) totalKg += units * Number(p.unitWeightKg);
     }
   }
   const lines = shipmentCart.length;
   const ctLabel = Number.isFinite(totalCt) ? (Math.round(totalCt * 100) / 100).toString() : '0';
-  // Update new stat elements
-  const sL = document.getElementById("statLines"), sU = document.getElementById("statUnits"), sC = document.getElementById("statCT");
-  if (sL) sL.textContent = lines; if (sU) sU.textContent = totalUnits; if (sC) sC.textContent = ctLabel;
+  const kgLabel = Number.isFinite(totalKg) && totalKg > 0 ? (Math.round(totalKg * 100) / 100).toString() : '0';
+  const sL = document.getElementById("statLines"), sU = document.getElementById("statUnits"), sC = document.getElementById("statCT"), sK = document.getElementById("statKg");
+  if (sL) sL.textContent = lines; if (sU) sU.textContent = totalUnits; if (sC) sC.textContent = ctLabel; if (sK) sK.textContent = kgLabel;
   const badge = document.getElementById("cartBadge"); if (badge) badge.textContent = lines;
 }
 

@@ -220,6 +220,27 @@ body {
   min-height: calc(100vh - 80px);
 }
 
+/* When commerciale is logged in: wider cart, no left sidebar needed */
+body.role-commerciale .layout {
+  grid-template-columns: 200px 1fr 480px;
+}
+body.role-commerciale .cart-sidebar {
+  min-width: 0;
+}
+body.role-commerciale .shipmentCartGrid {
+  grid-template-columns: 1fr 90px 80px auto;
+}
+body.role-commerciale .shipmentCartItemName {
+  font-size: 14px;
+}
+body.role-commerciale .shipmentCartThumb {
+  width: 72px;
+  height: 72px;
+}
+body.role-commerciale .shipmentCartItemTop {
+  grid-template-columns: 72px 1fr;
+}
+
 /* ============================
    LEFT SIDEBAR
    ============================ */
@@ -573,18 +594,18 @@ body {
 }
 .cart-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
 }
 .cart-stat {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  padding: 8px 6px;
+  padding: 7px 4px;
   text-align: center;
 }
-.cart-stat b { display: block; font-size: 18px; color: var(--accent); }
-.cart-stat span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.cart-stat b { display: block; font-size: 15px; color: var(--accent); }
+.cart-stat span { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
 
 .cart-items {
   flex: 1;
