@@ -1895,6 +1895,7 @@ function renderCommRequests() {
           ${r.pdfBase64 ? `<button class="btn small primary" type="button" data-act="pdf-dl">📄 PDF</button>` : ''}
           ${!isConfirmed ? `<button class="btn small" style="background:linear-gradient(to bottom,#d4edda,#c3e6cb);border-color:#28a745;color:#155724" type="button" data-act="confirm">✅ Conferma</button>` : ''}
           <button class="btn small ghost" type="button" data-act="email">📧 Email</button>
+          <button class="btn small ghost danger" type="button" data-act="delete" title="Elimina richiesta">🗑</button>
         </div>
       </td>`;
 
@@ -1912,6 +1913,9 @@ function renderCommRequests() {
     if (!isConfirmed) {
       tr.querySelector('[data-act="confirm"]')?.addEventListener('click', () => confirmCommRequest(r.id));
     }
+
+    // Delete request
+    tr.querySelector('[data-act="delete"]').addEventListener('click', () => deleteCommRequest(r.id));
 
     // Email precompilata al commerciale
     tr.querySelector('[data-act="email"]').addEventListener('click', () => {
@@ -1991,6 +1995,24 @@ async function confirmCommRequest(requestId) {
   } catch(e) { console.warn('Supabase save failed:', e); }
 
   alert(`✅ Richiesta N°${r.requestNumber} confermata!\nLo stock è stato scalato.`);
+  renderCommRequests();
+}
+
+async function deleteCommRequest(requestId) {
+  if (!isAdmin()) return;
+  const requests = Array.isArray(state?.commercialeRequests) ? state.commercialeRequests : [];
+  const r = requests.find(x => x.id === requestId);
+  if (!r) return;
+  if (!confirm(`Eliminare la richiesta N°${r.requestNumber} di ${r.name}?\n\nQuesta azione è irreversibile.`)) return;
+
+  state.commercialeRequests = state.commercialeRequests.filter(x => x.id !== requestId);
+
+  try {
+    if (supabaseClient) {
+      await supabaseClient.from('catalogue').upsert({ id: CATALOGUE_ROW_ID, data: state, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+    }
+  } catch(e) { console.warn('Supabase save failed:', e); }
+
   renderCommRequests();
 }
 /* ============================================================ */
