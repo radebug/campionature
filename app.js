@@ -457,13 +457,28 @@ async function sendSamplingRequest() {
   doc.setFont(undefined, 'normal');
   shipmentCart.forEach((item, i) => {
     if (y > 275) { doc.addPage(); y = 16; }
+    const isBackorder = !!item.isBackorder;
+    const rowH = isBackorder ? 14 : 8;
     const bg = i % 2 === 0 ? [255, 255, 255] : [248, 250, 250];
-    doc.setFillColor(...bg); doc.rect(14, y - 4, 182, 8, 'F');
+    doc.setFillColor(...bg); doc.rect(14, y - 4, 182, rowH, 'F');
+    // If backorder, draw an orange left border indicator
+    if (isBackorder) {
+      doc.setFillColor(240, 173, 78); doc.rect(14, y - 4, 3, rowH, 'F');
+    }
+    doc.setTextColor(0, 0, 0);
     doc.text(String(i + 1), 16, y + 1);
     doc.text(item.productName.substring(0, 55), 24, y + 1);
     doc.text(String(item.qty), 150, y + 1);
     doc.text(item.unitMode === 'ct' ? 'CT' : 'unità', 172, y + 1);
-    y += 8;
+    if (isBackorder) {
+      doc.setFontSize(8); doc.setFont(undefined, 'bold');
+      doc.setTextColor(180, 80, 0);
+      doc.text('⚠ BACKORDER — DA ORDINARE CON ZGRA', 24, y + 8);
+      doc.setTextColor(0, 0, 0); doc.setFont(undefined, 'normal'); doc.setFontSize(10);
+      y += rowH;
+    } else {
+      y += rowH;
+    }
   });
 
   const pdfFileName = `campionatura_N${requestNumber}_${name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
@@ -504,9 +519,10 @@ async function sendSamplingRequest() {
   }
 
   // ---- Testo email ----
-  const productList = shipmentCart.map((it, i) =>
-    `  ${i + 1}. ${it.productName} — ${it.qty} ${it.unitMode === 'ct' ? 'CT' : 'unità'}`
-  ).join('\n');
+  const productList = shipmentCart.map((it, i) => {
+    const base = `  ${i + 1}. ${it.productName} — ${it.qty} ${it.unitMode === 'ct' ? 'CT' : 'unità'}`;
+    return it.isBackorder ? `${base}  ⚠ BACKORDER — DA ORDINARE CON ZGRA` : base;
+  }).join('\n');
   const emailBody = [
     `${name} ha inviato una richiesta di campionatura (N°${requestNumber}).`,
     ``,
@@ -932,6 +948,7 @@ function validateAndNormalize(obj) {
 }
 
 function render() {
+  if (!state) return;
   renderCategories();
   renderFilterLine();
   renderProducts();
@@ -951,7 +968,7 @@ function renderCategories() {
   ];
   for (const s of specials) els.categoryList.appendChild(catRow(s, true));
 
-  const cats = (state.categories || [])
+  const cats = (state?.categories || [])
     .slice().sort((a, b) => a.name.localeCompare(b.name))
     .filter(c => c.name.toLowerCase().includes(ui.catSearch));
 
