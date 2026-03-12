@@ -387,7 +387,7 @@ function updateCartUIForRole() {
             <input id="commDeliveryDate" type="text" placeholder="DD/MM/AAAA" style="flex:1" autocomplete="off" />
             <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;font-size:12px;cursor:pointer">
               <input type="checkbox" id="commAsSoonAsPossible" style="width:auto" />
-              Il prima possibile
+              Non ho una data
             </label>
           </div>
         </label>
@@ -409,7 +409,7 @@ function updateCartUIForRole() {
       document.getElementById('btnSendSamplingRequest').addEventListener('click', sendSamplingRequest);
       document.getElementById('btnClearCommCart').addEventListener('click', clearCommCart);
 
-      // "Il prima possibile" checkbox disables date field
+      // "Non ho una data" checkbox disables date field
       document.getElementById('commAsSoonAsPossible').addEventListener('change', function() {
         const dateInput = document.getElementById('commDeliveryDate');
         if (this.checked) { dateInput.value = ''; dateInput.disabled = true; }
@@ -439,7 +439,7 @@ async function sendSamplingRequest() {
 
 
   const asap        = document.getElementById('commAsSoonAsPossible')?.checked;
-  const delivDate   = asap ? 'Il prima possibile' : (document.getElementById('commDeliveryDate')?.value || '').trim();
+  const delivDate   = asap ? 'Non ho una data' : (document.getElementById('commDeliveryDate')?.value || '').trim();
 
   const name        = (document.getElementById('commName')?.value || '').trim();
   const email       = (document.getElementById('commEmail')?.value || '').trim();
@@ -1029,7 +1029,7 @@ function catRow(cat, pseudo) {
     edit.addEventListener("click", (e) => { e.stopPropagation(); openCategoryDlg(cat.id); });
     const del = document.createElement("button");
     del.className = "btn small ghost danger"; del.textContent = "Del";
-    del.addEventListener("click", async (e) => { e.stopPropagation(); await deleteCategory(cat.id); });
+    del.addEventListener("click", (e) => { e.stopPropagation(); deleteCategory(cat.id); });
     btns.append(edit, del);
   }
   row.append(name, btns);
@@ -1097,7 +1097,7 @@ function filteredProducts() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function productCard(p) {
+async function productCard(p) {
   const node = els.cardTpl.content.cloneNode(true);
   const cardEl = node.querySelector(".card");
 
@@ -1672,7 +1672,7 @@ async function addProductToShipmentCart(productId) {
   renderShipmentCart();
 }
 
-function clearShipmentCart() { shipmentCart = []; renderShipmentCart(); }
+async function clearShipmentCart() { shipmentCart = []; renderShipmentCart(); }
 
 function shipmentItemAvailableUnits(item) {
   const p = state.products.find(x => x.id === item.productId);
@@ -1843,6 +1843,14 @@ function buildShipmentDraftFromCart(requireValidation = true) {
   const items = []; const errors = [];
   for (const item of shipmentCart) {
     const p = state.products.find(x => x.id === item.productId); if (!p) continue;
+    if (item.isBackorder) {
+      items.push({ productId: p.id, productName: p.name, lotExpiry: '__backorder__',
+        unitMode: 'units', qty: Math.max(1, Math.trunc(Number(item.qty) || 1)),
+        unitsQty: Math.max(1, Math.trunc(Number(item.qty) || 1)),
+        customsCode: p.customsCode || '', unitWeightKg: Number(p.unitWeightKg || 0) || 0,
+        isBackorder: true });
+      continue;
+    }
     const lot = normalizeLots((p.lots || []).filter(l => !l.ordered)).find(l => getLotKey(l.expiry) === getLotKey(item.lotExpiry));
     const availableUnits = Math.max(0, Math.trunc(Number(lot?.qty) || 0));
     const requestedUnits = cartItemRequestedUnits(item);
@@ -1895,6 +1903,7 @@ async function createShipmentFromCart() {
   const draft = buildShipmentDraftFromCart(true);
   if (draft.errors.length) { await showAlert(draft.errors.join("\n")); return; }
   for (const item of draft.items) {
+    if (item.isBackorder) continue; // backorder: no stock to withdraw
     const p = state.products.find(x => x.id === item.productId); if (!p) continue;
     if (!withdrawFromSpecificLot(p, item.lotExpiry, item.unitsQty)) { await showAlert(`Could not withdraw stock for ${item.productName}.`); return; }
   }
@@ -2246,7 +2255,7 @@ async function deleteShipment(id) {
   setDirty(true); renderShipmentHistory();
 }
 
-async function restoreShipmentToStock(shipment) {
+function restoreShipmentToStock(shipment) {
   for (const item of (shipment?.items || [])) {
     const p = state.products.find(x => x.id === item.productId); if (!p) continue;
     p.lots = normalizeLots(p.lots || []);
@@ -2257,7 +2266,7 @@ async function restoreShipmentToStock(shipment) {
   }
 }
 
-async function loadShipmentIntoCart(shipment) {
+function loadShipmentIntoCart(shipment) {
   shipmentCart = (shipment?.items || []).map(it => ({ id: uid("cart"), productId: it.productId, productName: it.productName, lotExpiry: it.lotExpiry || '', unitMode: it.unitMode === "ct" ? "ct" : "units", qty: Math.max(1, Math.trunc(Number(it.qty)||1)) }));
   if (els.cartShipDate) els.cartShipDate.value = formatDateDMY(shipment?.date || todayISO());
   if (els.cartDestination) els.cartDestination.value = shipment?.destination || '';
@@ -2282,7 +2291,7 @@ async function editShipment(id) {
   document.querySelector('.cart-sidebar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-async function exportShipmentFromHistory(id, kind = 'pdf') {
+function exportShipmentFromHistory(id, kind = 'pdf') {
   const shipment = normalizeShipmentRecords(state.shipments).find(x => x.id === id);
   if (!shipment) return;
   if (kind === 'pdf') exportShipmentDraftPDF(shipment);

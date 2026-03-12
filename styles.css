@@ -1159,12 +1159,12 @@ input:disabled { background: #f8f9f9; color: #999; cursor: not-allowed; }
 .custom-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.55);
+  background: rgba(0,0,0,0.45);
   z-index: 9999;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 16px;
+  padding: 60px 16px 16px;
 }
 .custom-modal-box {
   background: #fff;
@@ -1177,8 +1177,8 @@ input:disabled { background: #f8f9f9; color: #999; cursor: not-allowed; }
   animation: modalIn .15s ease;
 }
 @keyframes modalIn {
-  from { transform: scale(.93); opacity: 0; }
-  to   { transform: scale(1);   opacity: 1; }
+  from { transform: translateY(-12px); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
 }
 .custom-modal-body {
   font-size: 14px;
