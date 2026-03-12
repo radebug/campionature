@@ -1029,7 +1029,7 @@ function catRow(cat, pseudo) {
     edit.addEventListener("click", (e) => { e.stopPropagation(); openCategoryDlg(cat.id); });
     const del = document.createElement("button");
     del.className = "btn small ghost danger"; del.textContent = "Del";
-    del.addEventListener("click", (e) => { e.stopPropagation(); deleteCategory(cat.id); });
+    del.addEventListener("click", async (e) => { e.stopPropagation(); await deleteCategory(cat.id); });
     btns.append(edit, del);
   }
   row.append(name, btns);
@@ -1097,7 +1097,7 @@ function filteredProducts() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function productCard(p) {
+function productCard(p) {
   const node = els.cardTpl.content.cloneNode(true);
   const cardEl = node.querySelector(".card");
 
@@ -1217,7 +1217,7 @@ async function productCard(p) {
     const stockLine = node.querySelector('.stockLine');
     if (stockLine) stockLine.style.display = "none";
   }
-  node.querySelector('[data-act="del"]').addEventListener("click", () => {
+  node.querySelector('[data-act="del"]').addEventListener("click", async () => {
     if (!await showConfirm(`Delete "${p.name}"?`)) return;
     state.products = state.products.filter(x => x.id !== p.id);
     setDirty(true); render();
@@ -1309,7 +1309,7 @@ function renderProductPreview(p) {
 }
 
 /* Stock */
-function openStockDlg(productId) {
+async function openStockDlg(productId) {
   if (!isAdmin()) { await showAlert("Login come admin richiesto per modificare lo stock."); return; }
   ui.stockProductId = productId;
   const p = state.products.find(x => x.id === productId);
@@ -1477,7 +1477,7 @@ function openInfoDlg(productId) {
   els.infoDlg.showModal();
 }
 
-function openShipmentHistoryDlg() {
+async function openShipmentHistoryDlg() {
   if (!isAdmin()) { await showAlert("Login come admin richiesto per visualizzare lo storico."); return; }
   if (!state) return;
   renderShipmentHistory();
@@ -1516,7 +1516,7 @@ function lotStatus(expiryISO) {
   if (diff <= 3) return "expiring"; if (diff <= 4) return "risky"; return "ok";
 }
 
-function duplicateProductFromDialog() {
+async function duplicateProductFromDialog() {
   if (!state) return;
   const name = (els.prodName.value || "").trim();
   if (!name) { await showAlert("Give the product a name first (then duplicate)."); return; }
@@ -1563,7 +1563,7 @@ function attachDMYMask(input) {
   });
 }
 
-function downloadJSON(obj, filename) {
+async function downloadJSON(obj, filename) {
   const clean = JSON.parse(JSON.stringify(obj)); delete clean._dirty;
   const blob = new Blob([JSON.stringify(clean, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -1672,7 +1672,7 @@ async function addProductToShipmentCart(productId) {
   renderShipmentCart();
 }
 
-async function clearShipmentCart() { shipmentCart = []; renderShipmentCart(); }
+function clearShipmentCart() { shipmentCart = []; renderShipmentCart(); }
 
 function shipmentItemAvailableUnits(item) {
   const p = state.products.find(x => x.id === item.productId);
@@ -1971,7 +1971,7 @@ function renderShipmentHistory() {
 }
 
 /* =================== RICHIESTE COMMERCIALI =================== */
-function openCommRequestsDlg() {
+async function openCommRequestsDlg() {
   if (!isAdmin()) { await showAlert("Login come admin richiesto."); return; }
   const dlg = document.getElementById('commRequestsDlg');
   if (!dlg) return;
@@ -2234,7 +2234,7 @@ async function deleteCommRequest(requestId) {
 }
 /* ============================================================ */
 
-function deleteShipment(id) {
+async function deleteShipment(id) {
   if (!isAdmin()) return;
   if (!await showConfirm('Delete this shipment record?')) return;
   const shipment = normalizeShipmentRecords(state.shipments).find(x => x.id === id);
@@ -2246,7 +2246,7 @@ function deleteShipment(id) {
   setDirty(true); renderShipmentHistory();
 }
 
-function restoreShipmentToStock(shipment) {
+async function restoreShipmentToStock(shipment) {
   for (const item of (shipment?.items || [])) {
     const p = state.products.find(x => x.id === item.productId); if (!p) continue;
     p.lots = normalizeLots(p.lots || []);
@@ -2257,7 +2257,7 @@ function restoreShipmentToStock(shipment) {
   }
 }
 
-function loadShipmentIntoCart(shipment) {
+async function loadShipmentIntoCart(shipment) {
   shipmentCart = (shipment?.items || []).map(it => ({ id: uid("cart"), productId: it.productId, productName: it.productName, lotExpiry: it.lotExpiry || '', unitMode: it.unitMode === "ct" ? "ct" : "units", qty: Math.max(1, Math.trunc(Number(it.qty)||1)) }));
   if (els.cartShipDate) els.cartShipDate.value = formatDateDMY(shipment?.date || todayISO());
   if (els.cartDestination) els.cartDestination.value = shipment?.destination || '';
@@ -2268,7 +2268,7 @@ function loadShipmentIntoCart(shipment) {
   renderShipmentCart();
 }
 
-function editShipment(id) {
+async function editShipment(id) {
   if (!isAdmin()) return;
   const shipment = normalizeShipmentRecords(state.shipments).find(x => x.id === id);
   if (!shipment) return;
@@ -2282,7 +2282,7 @@ function editShipment(id) {
   document.querySelector('.cart-sidebar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function exportShipmentFromHistory(id, kind = 'pdf') {
+async function exportShipmentFromHistory(id, kind = 'pdf') {
   const shipment = normalizeShipmentRecords(state.shipments).find(x => x.id === id);
   if (!shipment) return;
   if (kind === 'pdf') exportShipmentDraftPDF(shipment);
@@ -2291,11 +2291,11 @@ function exportShipmentFromHistory(id, kind = 'pdf') {
 }
 
 /* Import catalogue from Excel */
-function importCatalogueFromExcel(file) {
+async function importCatalogueFromExcel(file) {
   if (!isAdmin()) { await showAlert("Admin login required to import."); return; }
   if (typeof XLSX === 'undefined') { await showAlert('Excel library not loaded.'); return; }
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
       const wb = XLSX.read(e.target.result, { type: 'binary' });
 
@@ -2384,7 +2384,7 @@ function importCatalogueFromExcel(file) {
 
 
 /* Excel export */
-function exportCatalogueExcel() {
+async function exportCatalogueExcel() {
   if (!isAdmin()) { await showAlert("Login come admin richiesto per esportare."); return; }
   if (!state) return;
   if (typeof XLSX === 'undefined') { await showAlert('Excel library not loaded.'); return; }
@@ -2404,7 +2404,7 @@ function exportCatalogueExcel() {
   XLSX.writeFile(wb, `campionature_${todayISO()}.xlsx`);
 }
 
-function exportShipmentDraftExcel(draft) {
+async function exportShipmentDraftExcel(draft) {
   if (!draft || !draft.items?.length) { await showAlert("Cart is empty."); return; }
   if (typeof XLSX === 'undefined') { await showAlert('Excel library not loaded.'); return; }
   const wb = XLSX.utils.book_new();
@@ -2413,7 +2413,7 @@ function exportShipmentDraftExcel(draft) {
   XLSX.writeFile(wb, `${draft.id}.xlsx`);
 }
 
-function exportShipmentDraftPDF(draft) {
+async function exportShipmentDraftPDF(draft) {
   if (!draft || !draft.items?.length) { await showAlert("Cart is empty."); return; }
   const jspdfNs = window.jspdf;
   if (!jspdfNs?.jsPDF) { await showAlert("PDF library not loaded."); return; }
@@ -2483,7 +2483,7 @@ function exportShipmentDraftPDF(draft) {
   doc.save(`${draft.id}.pdf`);
 }
 
-function exportDHLList(draft) {
+async function exportDHLList(draft) {
   if (!draft || !draft.items?.length) { await showAlert("Cart is empty."); return; }
   const text = draft.items.map(it => [`${it.customsCode || 'missing'}`, `BALCONI [${it.productName}]`, `[${it.unitWeightKg || 'missing'}]`].join('\n')).join('\n\n');
   const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
