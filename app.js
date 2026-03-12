@@ -1,5 +1,51 @@
 const $ = (s) => document.querySelector(s);
 
+/* ============================
+   Custom modal helpers (replace native alert/confirm to avoid browser domain label)
+   ============================ */
+function showAlert(msg) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('customModalOverlay');
+    const body    = document.getElementById('customModalBody');
+    const btns    = document.getElementById('customModalBtns');
+    if (!overlay) { window._nativeAlert(msg); resolve(); return; }
+    body.textContent = msg;
+    btns.innerHTML = '';
+    const ok = document.createElement('button');
+    ok.className = 'btn primary'; ok.textContent = 'OK';
+    ok.onclick = () => { overlay.style.display = 'none'; resolve(); };
+    btns.appendChild(ok);
+    overlay.style.display = 'flex';
+    setTimeout(() => ok.focus(), 50);
+  });
+}
+function showConfirm(msg) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('customModalOverlay');
+    const body    = document.getElementById('customModalBody');
+    const btns    = document.getElementById('customModalBtns');
+    if (!overlay) { resolve(window._nativeConfirm(msg)); return; }
+    body.textContent = msg;
+    btns.innerHTML = '';
+    const cancel = document.createElement('button');
+    cancel.className = 'btn ghost'; cancel.textContent = 'Annulla';
+    cancel.onclick = () => { overlay.style.display = 'none'; resolve(false); };
+    const ok = document.createElement('button');
+    ok.className = 'btn primary'; ok.textContent = 'Conferma';
+    ok.onclick = () => { overlay.style.display = 'none'; resolve(true); };
+    btns.append(cancel, ok);
+    overlay.style.display = 'flex';
+    setTimeout(() => ok.focus(), 50);
+  });
+}
+// Dismiss modal on overlay click
+document.addEventListener('DOMContentLoaded', () => {
+  const overlay = document.getElementById('customModalOverlay');
+  if (overlay) overlay.addEventListener('click', e => {
+    if (e.target === overlay) { /* don't close on overlay click — user must press button */ }
+  });
+});
+
 const els = {
   btnOpenFolder: $("#btnOpenFolder"),
   folderStatus: $("#folderStatus"),
@@ -174,6 +220,10 @@ function refreshAuthUI() {
   document.body.classList.remove('role-admin', 'role-commerciale', 'role-viewer');
   if (portalSession?.role) document.body.classList.add('role-' + portalSession.role);
 
+  // Show info banner for commerciale role
+  const commBanner = document.getElementById('commInfoBanner');
+  if (commBanner) commBanner.style.display = isCommerciale() ? 'flex' : 'none';
+
   const editable = isAdmin();
   if (els?.btnSave) {
     els.btnSave.disabled = !editable;
@@ -260,7 +310,7 @@ async function portalLogin(username, password) {
   // Check local accounts first (e.g. commerciale)
   const localAccount = LOCAL_ACCOUNTS[username.toLowerCase()];
   if (localAccount) {
-    if (password !== localAccount.password) { alert("Login failed: password errata."); return; }
+    if (password !== localAccount.password) { await showAlert("Login failed: password errata."); return; }
     savePortalSession({
       token: "local_" + username + "_" + Date.now(),
       role: localAccount.role,
@@ -269,12 +319,12 @@ async function portalLogin(username, password) {
     });
     return;
   }
-  if (!supabaseClient) { alert("Supabase not configured."); return; }
+  if (!supabaseClient) { await showAlert("Supabase not configured."); return; }
   const adminEmail = window.ADMIN_EMAIL || `${username}@campionature.local`;
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email: adminEmail, password });
-  if (error) { alert("Login failed: " + error.message); return; }
+  if (error) { await showAlert("Login failed: " + error.message); return; }
   const session = data?.session;
-  if (!session?.access_token) { alert("Login failed"); return; }
+  if (!session?.access_token) { await showAlert("Login failed"); return; }
   savePortalSession({
     token: session.access_token,
     role: "admin",
@@ -385,7 +435,7 @@ function updateCartUIForRole() {
 }
 
 async function sendSamplingRequest() {
-  if (!shipmentCart.length) { alert("Il carrello è vuoto."); return; }
+  if (!shipmentCart.length) { await showAlert("Il carrello è vuoto."); return; }
 
 
   const asap        = document.getElementById('commAsSoonAsPossible')?.checked;
@@ -399,12 +449,12 @@ async function sendSamplingRequest() {
   const address     = noAddress ? 'Non fornito' : (document.getElementById('commAddress')?.value || '').trim();
   const notes       = (document.getElementById('commNotes')?.value || '').trim();
 
-  if (!name)      { alert("Il campo Nome Commerciale è obbligatorio."); document.getElementById('commName')?.focus(); return; }
-  if (!email)     { alert("Il campo Email è obbligatorio."); document.getElementById('commEmail')?.focus(); return; }
-  if (!reference) { alert("Il campo Riferimento è obbligatorio."); document.getElementById('commReference')?.focus(); return; }
-  if (!noAddress && !address) { alert("Il campo Indirizzo è obbligatorio. Se non hai un indirizzo, spunta 'Non ho un indirizzo'."); document.getElementById('commAddress')?.focus(); return; }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert("Inserisci un indirizzo email valido."); document.getElementById('commEmail')?.focus(); return; }
-  if (!EMAILJS_CONFIGURED) { alert("⚠ EmailJS non è configurato. Contatta l'amministratore."); return; }
+  if (!name)      { await showAlert("Il campo Nome Commerciale è obbligatorio."); document.getElementById('commName')?.focus(); return; }
+  if (!email)     { await showAlert("Il campo Email è obbligatorio."); document.getElementById('commEmail')?.focus(); return; }
+  if (!reference) { await showAlert("Il campo Riferimento è obbligatorio."); document.getElementById('commReference')?.focus(); return; }
+  if (!noAddress && !address) { await showAlert("Il campo Indirizzo è obbligatorio. Se non hai un indirizzo, spunta 'Non ho un indirizzo'."); document.getElementById('commAddress')?.focus(); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { await showAlert("Inserisci un indirizzo email valido."); document.getElementById('commEmail')?.focus(); return; }
+  if (!EMAILJS_CONFIGURED) { await showAlert("⚠ EmailJS non è configurato. Contatta l'amministratore."); return; }
 
   // ---- Numero progressivo (PRIMA del PDF) ----
   const existingRequests = Array.isArray(state?.commercialeRequests) ? state.commercialeRequests : [];
@@ -412,7 +462,7 @@ async function sendSamplingRequest() {
 
   // ---- Build PDF ----
   const jspdfNs = window.jspdf;
-  if (!jspdfNs?.jsPDF) { alert("PDF library not loaded."); return; }
+  if (!jspdfNs?.jsPDF) { await showAlert("PDF library not loaded."); return; }
   const doc = new jspdfNs.jsPDF();
   let y = 18;
 
@@ -554,16 +604,16 @@ async function sendSamplingRequest() {
     });
     // Scarica sempre il PDF come ricevuta
     doc.save(pdfFileName);
-    alert(`✅ Richiesta N°${requestNumber} inviata!\nIl PDF è stato scaricato come ricevuta.`);
+    await showAlert(`✅ Richiesta N°${requestNumber} inviata!\nIl PDF è stato scaricato come ricevuta.`);
   } catch(err) {
-    alert(`❌ Invio fallito: ${err?.text || err?.message || String(err)}`);
+    await showAlert(`❌ Invio fallito: ${err?.text || err?.message || String(err)}`);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
 }
 
-function clearCommCart() {
-  if (!confirm('Svuotare il carrello e azzerare tutti i campi?')) return;
+async function clearCommCart() {
+  if (!await showConfirm('Svuotare il carrello e azzerare tutti i campi?')) return;
   shipmentCart = [];
   // Reset form fields
   ['commName','commEmail','commReference','commDestination','commAddress','commDeliveryDate','commNotes'].forEach(id => {
@@ -580,14 +630,14 @@ function clearCommCart() {
 
 
 async function portalSaveCatalogue() {
-  if (!isAdmin()) { alert("Admin login required to save."); return; }
-  if (!supabaseClient) { alert("Supabase not configured yet."); return; }
+  if (!isAdmin()) { await showAlert("Admin login required to save."); return; }
+  if (!supabaseClient) { await showAlert("Supabase not configured yet."); return; }
   const { error } = await supabaseClient
     .from("catalogue")
     .upsert({ id: CATALOGUE_ROW_ID, data: state, updated_at: new Date().toISOString() }, { onConflict: "id" });
-  if (error) { alert("Save failed: " + error.message); return; }
+  if (error) { await showAlert("Save failed: " + error.message); return; }
   setDirty(false);
-  alert("Saved online ✅");
+  await showAlert("Saved online ✅");
 }
 
 /* ------------------------------------------------------------------ */
@@ -643,7 +693,7 @@ function wire() {
     btnLogin.addEventListener("click", async () => {
       const username = (authUser?.value || "omaggi").trim();
       const password = (authPass?.value || "").trim();
-      if (!password) { alert("Inserisci la password"); return; }
+      if (!password) { await showAlert("Inserisci la password"); return; }
       await portalLogin(username, password);
       refreshAuthUI(); render();
     });
@@ -680,7 +730,7 @@ function wire() {
     if (fs.folderHandle) {
       await saveJsonToFolder(); setDirty(false);
       if (els.folderStatus) els.folderStatus.textContent = "Folder mode: ON (saved)";
-      alert("Saved to data/catalogue.json");
+      await showAlert("Saved to data/catalogue.json");
     } else { downloadJSON(state, "catalogue.json"); }
   });
 
@@ -812,7 +862,7 @@ function wire() {
 
 /* Folder mode */
 async function openCatalogueFolder() {
-  if (!window.showDirectoryPicker) { alert("Folder mode not supported. Use Chrome/Edge."); return; }
+  if (!window.showDirectoryPicker) { await showAlert("Folder mode not supported. Use Chrome/Edge."); return; }
   try {
     const dir = await window.showDirectoryPicker({ id: "catalogueFolder", mode: "readwrite", startIn: "documents" });
     fs.folderHandle = dir;
@@ -853,7 +903,7 @@ async function loadJsonFromPicker() {
     state = obj; loadedFileName = file.name;
     ui.selectedCategoryId = "__all__"; ui.search = ""; els.search.value = "";
     setEnabled(true); setDirty(false); render();
-  } catch (e) { alert("Failed to load JSON: " + (e?.message || "Unknown error")); }
+  } catch (e) { await showAlert("Failed to load JSON: " + (e?.message || "Unknown error")); }
   finally { els.filePicker.value = ""; }
 }
 
@@ -1047,7 +1097,7 @@ function filteredProducts() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function productCard(p) {
+async function productCard(p) {
   const node = els.cardTpl.content.cloneNode(true);
   const cardEl = node.querySelector(".card");
 
@@ -1156,13 +1206,6 @@ function productCard(p) {
       cartBtn.textContent = "⏳ Backorder";
       cartBtn.classList.add("btn-backorder");
     }
-  } else if (isAdmin()) {
-    // Admin (omaggi): if out of stock show Backorder button
-    const cartBtn = node.querySelector('[data-act="ship"]');
-    if (cartBtn && totalStock(p) === 0) {
-      cartBtn.textContent = "⏳ Backorder";
-      cartBtn.classList.add("btn-backorder");
-    }
   } else if (!isAdmin()) {
     // Viewer: hide buttons and stock info entirely
     node.querySelector('[data-act="edit"]').style.display = "none";
@@ -1175,7 +1218,7 @@ function productCard(p) {
     if (stockLine) stockLine.style.display = "none";
   }
   node.querySelector('[data-act="del"]').addEventListener("click", () => {
-    if (!confirm(`Delete "${p.name}"?`)) return;
+    if (!await showConfirm(`Delete "${p.name}"?`)) return;
     state.products = state.products.filter(x => x.id !== p.id);
     setDirty(true); render();
   });
@@ -1200,12 +1243,12 @@ function openCategoryDlg(id) {
   els.catDlg.showModal(); setTimeout(() => els.catName.focus(), 50);
 }
 
-function deleteCategory(id) {
+async function deleteCategory(id) {
   const c = state.categories.find(x => x.id === id);
   if (!c) return;
   const used = state.products.some(p => (p.categoryIds || []).includes(id));
   const msg = used ? `Delete category "${c.name}"? Products in it will become Uncategorized.` : `Delete category "${c.name}"?`;
-  if (!confirm(msg)) return;
+  if (!await showConfirm(msg)) return;
   state.categories = state.categories.filter(x => x.id !== id);
   for (const p of state.products) p.categoryIds = (p.categoryIds || []).filter(cid => cid !== id);
   if (ui.selectedCategoryId === id) ui.selectedCategoryId = "__all__";
@@ -1267,7 +1310,7 @@ function renderProductPreview(p) {
 
 /* Stock */
 function openStockDlg(productId) {
-  if (!isAdmin()) { alert("Login come admin richiesto per modificare lo stock."); return; }
+  if (!isAdmin()) { await showAlert("Login come admin richiesto per modificare lo stock."); return; }
   ui.stockProductId = productId;
   const p = state.products.find(x => x.id === productId);
   if (!p) return;
@@ -1358,8 +1401,8 @@ function receiveOrderedLot(p, lot) {
   els.stockMsg.textContent = `Received ${qty} for ${formatDateDMY(expiryISO)}.`;
 }
 
-function adjustStock(dir) {
-  if (!isAdmin()) { alert("Login come admin richiesto per modificare lo stock."); return; }
+async function adjustStock(dir) {
+  if (!isAdmin()) { await showAlert("Login come admin richiesto per modificare lo stock."); return; }
   const p = state.products.find(x => x.id === ui.stockProductId);
   if (!p) return;
   const expiryText = (els.stockExpiry.value || "").trim();
@@ -1435,7 +1478,7 @@ function openInfoDlg(productId) {
 }
 
 function openShipmentHistoryDlg() {
-  if (!isAdmin()) { alert("Login come admin richiesto per visualizzare lo storico."); return; }
+  if (!isAdmin()) { await showAlert("Login come admin richiesto per visualizzare lo storico."); return; }
   if (!state) return;
   renderShipmentHistory();
   els.shipHistDlg.showModal();
@@ -1476,7 +1519,7 @@ function lotStatus(expiryISO) {
 function duplicateProductFromDialog() {
   if (!state) return;
   const name = (els.prodName.value || "").trim();
-  if (!name) { alert("Give the product a name first (then duplicate)."); return; }
+  if (!name) { await showAlert("Give the product a name first (then duplicate)."); return; }
   const selectedCategoryIds = els.prodCategoriesBox
     ? Array.from(els.prodCategoriesBox.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value) : [];
   const newProduct = {
@@ -1527,7 +1570,7 @@ function downloadJSON(obj, filename) {
   const a = document.createElement("a"); a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   setDirty(false);
-  alert("Saved as download.\n\nReplace data/catalogue.json with the downloaded file.");
+  await showAlert("Saved as download.\n\nReplace data/catalogue.json with the downloaded file.");
 }
 
 function createOrder() {
@@ -1573,17 +1616,17 @@ function withdrawFromLots(p, qtyNeeded) {
   return remaining === 0;
 }
 
-function onShipSubmit(e) {
+async function onShipSubmit(e) {
   e.preventDefault();
   const p = state.products.find(x => x.id === ui.shipProductId);
   if (!p) return;
   const dateISO = parseDMYToISO(els.shipDate.value || '') || todayISO();
   const qty = Math.max(0, Math.trunc(Number(els.shipQty.value) || 0));
-  if (qty < 1) { alert('Quantity must be at least 1.'); return; }
+  if (qty < 1) { await showAlert('Quantity must be at least 1.'); return; }
   const available = availableStock(p);
-  if (qty > available) { alert(`Available stock is ${available}.`); return; }
+  if (qty > available) { await showAlert(`Available stock is ${available}.`); return; }
   const ok = withdrawFromLots(p, qty);
-  if (!ok) { alert('Could not register shipment.'); return; }
+  if (!ok) { await showAlert('Could not register shipment.'); return; }
   state.shipments.unshift({
     id: uid('ship'), date: dateISO, productId: p.id, productName: p.name, qty,
     destination: (els.shipDestination.value || '').trim(), recipient: (els.shipRecipient.value || '').trim(),
@@ -1596,15 +1639,15 @@ function onShipSubmit(e) {
 /* =================== SHIPMENT CART =================== */
 function getLotKey(expiry) { return String(expiry || "__unknown__"); }
 
-function addProductToShipmentCart(productId) {
+async function addProductToShipmentCart(productId) {
   const p = state.products.find(x => x.id === productId);
   if (!p) return;
 
-  // Both admin (omaggi) and commerciale: allow backorder if out of stock
-  if (isAdmin() || isCommerciale()) {
-    // Block discontinued products with no stock for commerciale (mod 5)
-    if (isCommerciale() && p.discontinued && totalStock(p) === 0) {
-      alert(`Il prodotto "${p.name}" è Discontinued e non è disponibile a stock. Non è possibile ordinarlo.`);
+  // Commerciale: allow backorder if out of stock (but not discontinued - handled by mod 5)
+  if (isCommerciale()) {
+    // Modifica 5: Block order of discontinued products with no stock
+    if (p.discontinued && totalStock(p) === 0) {
+      await showAlert(`Il prodotto "${p.name}" è Discontinued e non è disponibile a stock. Non è possibile ordinarlo.`);
       return;
     }
     const firstLot = sortedRealLotsForShipping(p).find(l => l.qty > 0);
@@ -1622,14 +1665,14 @@ function addProductToShipmentCart(productId) {
   }
 
   const firstLot = sortedRealLotsForShipping(p).find(l => l.qty > 0);
-  if (!firstLot) { alert("No available stock lots for this product."); return; }
+  if (!firstLot) { await showAlert("No available stock lots for this product."); return; }
   const existing = shipmentCart.find(it => it.productId === productId && getLotKey(it.lotExpiry) === getLotKey(firstLot.expiry) && it.unitMode === "units");
   if (existing) existing.qty += 1;
   else shipmentCart.push({ id: uid("cart"), productId: p.id, productName: p.name, lotExpiry: firstLot.expiry, unitMode: "units", qty: 1 });
   renderShipmentCart();
 }
 
-function clearShipmentCart() { shipmentCart = []; renderShipmentCart(); }
+async function clearShipmentCart() { shipmentCart = []; renderShipmentCart(); }
 
 function shipmentItemAvailableUnits(item) {
   const p = state.products.find(x => x.id === item.productId);
@@ -1846,14 +1889,14 @@ function withdrawFromSpecificLot(p, expiry, qtyNeeded) {
   return true;
 }
 
-function createShipmentFromCart() {
-  if (!isAdmin()) { alert("Admin login required."); return; }
-  if (!shipmentCart.length) { alert("Cart is empty."); return; }
+async function createShipmentFromCart() {
+  if (!isAdmin()) { await showAlert("Admin login required."); return; }
+  if (!shipmentCart.length) { await showAlert("Cart is empty."); return; }
   const draft = buildShipmentDraftFromCart(true);
-  if (draft.errors.length) { alert(draft.errors.join("\n")); return; }
+  if (draft.errors.length) { await showAlert(draft.errors.join("\n")); return; }
   for (const item of draft.items) {
     const p = state.products.find(x => x.id === item.productId); if (!p) continue;
-    if (!withdrawFromSpecificLot(p, item.lotExpiry, item.unitsQty)) { alert(`Could not withdraw stock for ${item.productName}.`); return; }
+    if (!withdrawFromSpecificLot(p, item.lotExpiry, item.unitsQty)) { await showAlert(`Could not withdraw stock for ${item.productName}.`); return; }
   }
   state.shipments.unshift({ id: draft.id, date: draft.date, destination: draft.destination, recipient: draft.recipient, reference: draft.reference, notes: draft.notes, extraUE: draft.extraUE, createdAt: draft.createdAt, items: draft.items });
   setDirty(true);
@@ -1929,7 +1972,7 @@ function renderShipmentHistory() {
 
 /* =================== RICHIESTE COMMERCIALI =================== */
 function openCommRequestsDlg() {
-  if (!isAdmin()) { alert("Login come admin richiesto."); return; }
+  if (!isAdmin()) { await showAlert("Login come admin richiesto."); return; }
   const dlg = document.getElementById('commRequestsDlg');
   if (!dlg) return;
   renderCommRequests();
@@ -2029,10 +2072,10 @@ async function confirmCommRequest(requestId) {
   const requests = Array.isArray(state?.commercialeRequests) ? state.commercialeRequests : [];
   const r = requests.find(x => x.id === requestId);
   if (!r) return;
-  if (r.status === 'confirmed') { alert('Richiesta già confermata.'); return; }
+  if (r.status === 'confirmed') { await showAlert('Richiesta già confermata.'); return; }
 
   const productList = (r.items || []).map(it => `${it.productName} ×${it.qty}`).join(', ');
-  if (!confirm(`Confermare la richiesta N°${r.requestNumber} di ${r.name}?\n\n${productList}\n\nLo stock verrà scalato automaticamente.`)) return;
+  if (!await showConfirm(`Confermare la richiesta N°${r.requestNumber} di ${r.name}?\n\n${productList}\n\nLo stock verrà scalato automaticamente.`)) return;
 
   const errors = [];
   for (const item of (r.items || [])) {
@@ -2046,7 +2089,7 @@ async function confirmCommRequest(requestId) {
     }
   }
   if (errors.length) {
-    alert('⚠ Stock insufficiente per confermare:\n\n' + errors.join('\n') + '\n\nLa richiesta non è stata confermata.');
+    await showAlert('⚠ Stock insufficiente per confermare:\n\n' + errors.join('\n') + '\n\nLa richiesta non è stata confermata.');
     return;
   }
 
@@ -2168,7 +2211,7 @@ async function confirmCommRequest(requestId) {
     }
   } catch(e) { console.warn('Supabase save failed:', e); }
 
-  alert(`✅ Richiesta N°${r.requestNumber} confermata!\nLo stock è stato scalato.`);
+  await showAlert(`✅ Richiesta N°${r.requestNumber} confermata!\nLo stock è stato scalato.`);
   renderCommRequests();
 }
 
@@ -2177,7 +2220,7 @@ async function deleteCommRequest(requestId) {
   const requests = Array.isArray(state?.commercialeRequests) ? state.commercialeRequests : [];
   const r = requests.find(x => x.id === requestId);
   if (!r) return;
-  if (!confirm(`Eliminare la richiesta N°${r.requestNumber} di ${r.name}?\n\nQuesta azione è irreversibile.`)) return;
+  if (!await showConfirm(`Eliminare la richiesta N°${r.requestNumber} di ${r.name}?\n\nQuesta azione è irreversibile.`)) return;
 
   state.commercialeRequests = state.commercialeRequests.filter(x => x.id !== requestId);
 
@@ -2193,10 +2236,10 @@ async function deleteCommRequest(requestId) {
 
 function deleteShipment(id) {
   if (!isAdmin()) return;
-  if (!confirm('Delete this shipment record?')) return;
+  if (!await showConfirm('Delete this shipment record?')) return;
   const shipment = normalizeShipmentRecords(state.shipments).find(x => x.id === id);
   if (shipment) {
-    const restoreStock = confirm('Vuoi aggiornare lo stock?\n\nSì = i prodotti della spedizione vengono rimessi in stock.\nNo = la spedizione viene cancellata senza modifiche allo stock.');
+    const restoreStock = await showConfirm('Vuoi aggiornare lo stock?\n\nSì = i prodotti della spedizione vengono rimessi in stock.\nNo = la spedizione viene cancellata senza modifiche allo stock.');
     if (restoreStock) restoreShipmentToStock(shipment);
   }
   state.shipments = normalizeShipmentRecords(state.shipments).filter(x => x.id !== id);
@@ -2229,8 +2272,8 @@ function editShipment(id) {
   if (!isAdmin()) return;
   const shipment = normalizeShipmentRecords(state.shipments).find(x => x.id === id);
   if (!shipment) return;
-  if (!confirm('Load this shipment back into the cart for editing?')) return;
-  const restoreStock = confirm('Vuoi aggiornare lo stock?\n\nSì = i prodotti della spedizione vengono rimessi in stock.\nNo = la spedizione viene caricata nel carrello senza modifiche allo stock.');
+  if (!await showConfirm('Load this shipment back into the cart for editing?')) return;
+  const restoreStock = await showConfirm('Vuoi aggiornare lo stock?\n\nSì = i prodotti della spedizione vengono rimessi in stock.\nNo = la spedizione viene caricata nel carrello senza modifiche allo stock.');
   if (restoreStock) restoreShipmentToStock(shipment);
   state.shipments = normalizeShipmentRecords(state.shipments).filter(x => x.id !== id);
   loadShipmentIntoCart(shipment);
@@ -2249,8 +2292,8 @@ function exportShipmentFromHistory(id, kind = 'pdf') {
 
 /* Import catalogue from Excel */
 function importCatalogueFromExcel(file) {
-  if (!isAdmin()) { alert("Admin login required to import."); return; }
-  if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
+  if (!isAdmin()) { await showAlert("Admin login required to import."); return; }
+  if (typeof XLSX === 'undefined') { await showAlert('Excel library not loaded.'); return; }
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
@@ -2258,9 +2301,9 @@ function importCatalogueFromExcel(file) {
 
       // ---- Products sheet ----
       const prodSheet = wb.Sheets['Products'];
-      if (!prodSheet) { alert('Sheet "Products" not found.\nUpload the file exported by "Export Excel".'); return; }
+      if (!prodSheet) { await showAlert('Sheet "Products" not found.\nUpload the file exported by "Export Excel".'); return; }
       const prodRows = XLSX.utils.sheet_to_json(prodSheet);
-      if (!prodRows.length) { alert('No product rows found in sheet "Products".'); return; }
+      if (!prodRows.length) { await showAlert('No product rows found in sheet "Products".'); return; }
 
       let imported = 0, updated = 0;
       for (const row of prodRows) {
@@ -2331,9 +2374,9 @@ function importCatalogueFromExcel(file) {
 
       setDirty(true); render();
       const lotsMsg = lotsSheet ? `, stock aggiornato per ${lotsUpdated} prodotti` : ' (foglio Lots non trovato, stock non modificato)';
-      alert(`✅ Import completato!\n${imported} prodotti aggiunti, ${updated} prodotti aggiornati${lotsMsg}.`);
+      await showAlert(`✅ Import completato!\n${imported} prodotti aggiunti, ${updated} prodotti aggiornati${lotsMsg}.`);
     } catch(err) {
-      alert('Errore durante l\'import: ' + (err ? (err.message || String(err)) : 'errore sconosciuto'));
+      await showAlert('Errore durante l\'import: ' + (err ? (err.message || String(err)) : 'errore sconosciuto'));
     }
   };
   reader.readAsBinaryString(file);
@@ -2342,9 +2385,9 @@ function importCatalogueFromExcel(file) {
 
 /* Excel export */
 function exportCatalogueExcel() {
-  if (!isAdmin()) { alert("Login come admin richiesto per esportare."); return; }
+  if (!isAdmin()) { await showAlert("Login come admin richiesto per esportare."); return; }
   if (!state) return;
-  if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
+  if (typeof XLSX === 'undefined') { await showAlert('Excel library not loaded.'); return; }
   const wb = XLSX.utils.book_new();
   const products = (state.products || []).slice().sort((a,b) => a.name.localeCompare(b.name)).map(p => ({
     Product: p.name, Categories: (p.categoryIds || []).map(id => state.categories.find(c => c.id === id)?.name).filter(Boolean).join(', '),
@@ -2362,8 +2405,8 @@ function exportCatalogueExcel() {
 }
 
 function exportShipmentDraftExcel(draft) {
-  if (!draft || !draft.items?.length) { alert("Cart is empty."); return; }
-  if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return; }
+  if (!draft || !draft.items?.length) { await showAlert("Cart is empty."); return; }
+  if (typeof XLSX === 'undefined') { await showAlert('Excel library not loaded.'); return; }
   const wb = XLSX.utils.book_new();
   const rows = draft.items.map(it => ({ ShipmentID: draft.id, Date: draft.date, Product: it.productName, Lot: it.lotExpiry === '__unknown__' ? 'Unknown' : it.lotExpiry, Mode: it.unitMode, Qty: it.qty, UnitsQty: it.unitsQty, Destination: draft.destination, Recipient: draft.recipient, Reference: draft.reference, Notes: draft.notes, ExtraUE: draft.extraUE ? 'Yes' : 'No' }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Shipment');
@@ -2371,9 +2414,9 @@ function exportShipmentDraftExcel(draft) {
 }
 
 function exportShipmentDraftPDF(draft) {
-  if (!draft || !draft.items?.length) { alert("Cart is empty."); return; }
+  if (!draft || !draft.items?.length) { await showAlert("Cart is empty."); return; }
   const jspdfNs = window.jspdf;
-  if (!jspdfNs?.jsPDF) { alert("PDF library not loaded."); return; }
+  if (!jspdfNs?.jsPDF) { await showAlert("PDF library not loaded."); return; }
   const doc = new jspdfNs.jsPDF();
   let y = 18;
 
@@ -2441,7 +2484,7 @@ function exportShipmentDraftPDF(draft) {
 }
 
 function exportDHLList(draft) {
-  if (!draft || !draft.items?.length) { alert("Cart is empty."); return; }
+  if (!draft || !draft.items?.length) { await showAlert("Cart is empty."); return; }
   const text = draft.items.map(it => [`${it.customsCode || 'missing'}`, `BALCONI [${it.productName}]`, `[${it.unitWeightKg || 'missing'}]`].join('\n')).join('\n\n');
   const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
   const url = URL.createObjectURL(blob); const a = document.createElement('a');
