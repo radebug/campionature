@@ -1097,7 +1097,7 @@ function filteredProducts() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function productCard(p) {
+/* MUST stay sync — returns DOM node */ function productCard(p) {
   const node = els.cardTpl.content.cloneNode(true);
   const cardEl = node.querySelector(".card");
 
