@@ -337,7 +337,7 @@ function updateCartUIForRole() {
             <input id="commDeliveryDate" type="text" placeholder="DD/MM/AAAA" style="flex:1" autocomplete="off" />
             <label style="display:flex;align-items:center;gap:4px;white-space:nowrap;font-size:12px;cursor:pointer">
               <input type="checkbox" id="commAsSoonAsPossible" style="width:auto" />
-              Non ho una data
+              Il prima possibile
             </label>
           </div>
         </label>
@@ -359,7 +359,7 @@ function updateCartUIForRole() {
       document.getElementById('btnSendSamplingRequest').addEventListener('click', sendSamplingRequest);
       document.getElementById('btnClearCommCart').addEventListener('click', clearCommCart);
 
-      // "Non ho una data" checkbox disables date field
+      // "Il prima possibile" checkbox disables date field
       document.getElementById('commAsSoonAsPossible').addEventListener('change', function() {
         const dateInput = document.getElementById('commDeliveryDate');
         if (this.checked) { dateInput.value = ''; dateInput.disabled = true; }
@@ -389,7 +389,7 @@ async function sendSamplingRequest() {
 
 
   const asap        = document.getElementById('commAsSoonAsPossible')?.checked;
-  const delivDate   = asap ? 'Non ho una data' : (document.getElementById('commDeliveryDate')?.value || '').trim();
+  const delivDate   = asap ? 'Il prima possibile' : (document.getElementById('commDeliveryDate')?.value || '').trim();
 
   const name        = (document.getElementById('commName')?.value || '').trim();
   const email       = (document.getElementById('commEmail')?.value || '').trim();
@@ -457,28 +457,13 @@ async function sendSamplingRequest() {
   doc.setFont(undefined, 'normal');
   shipmentCart.forEach((item, i) => {
     if (y > 275) { doc.addPage(); y = 16; }
-    const isBackorder = !!item.isBackorder;
-    const rowH = isBackorder ? 14 : 8;
     const bg = i % 2 === 0 ? [255, 255, 255] : [248, 250, 250];
-    doc.setFillColor(...bg); doc.rect(14, y - 4, 182, rowH, 'F');
-    // If backorder, draw an orange left border indicator
-    if (isBackorder) {
-      doc.setFillColor(240, 173, 78); doc.rect(14, y - 4, 3, rowH, 'F');
-    }
-    doc.setTextColor(0, 0, 0);
+    doc.setFillColor(...bg); doc.rect(14, y - 4, 182, 8, 'F');
     doc.text(String(i + 1), 16, y + 1);
     doc.text(item.productName.substring(0, 55), 24, y + 1);
     doc.text(String(item.qty), 150, y + 1);
     doc.text(item.unitMode === 'ct' ? 'CT' : 'unità', 172, y + 1);
-    if (isBackorder) {
-      doc.setFontSize(8); doc.setFont(undefined, 'bold');
-      doc.setTextColor(180, 80, 0);
-      doc.text('⚠ BACKORDER — DA ORDINARE CON ZGRA', 24, y + 8);
-      doc.setTextColor(0, 0, 0); doc.setFont(undefined, 'normal'); doc.setFontSize(10);
-      y += rowH;
-    } else {
-      y += rowH;
-    }
+    y += 8;
   });
 
   const pdfFileName = `campionatura_N${requestNumber}_${name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
@@ -519,10 +504,9 @@ async function sendSamplingRequest() {
   }
 
   // ---- Testo email ----
-  const productList = shipmentCart.map((it, i) => {
-    const base = `  ${i + 1}. ${it.productName} — ${it.qty} ${it.unitMode === 'ct' ? 'CT' : 'unità'}`;
-    return it.isBackorder ? `${base}  ⚠ BACKORDER — DA ORDINARE CON ZGRA` : base;
-  }).join('\n');
+  const productList = shipmentCart.map((it, i) =>
+    `  ${i + 1}. ${it.productName} — ${it.qty} ${it.unitMode === 'ct' ? 'CT' : 'unità'}`
+  ).join('\n');
   const emailBody = [
     `${name} ha inviato una richiesta di campionatura (N°${requestNumber}).`,
     ``,
@@ -948,7 +932,6 @@ function validateAndNormalize(obj) {
 }
 
 function render() {
-  if (!state) return;
   renderCategories();
   renderFilterLine();
   renderProducts();
@@ -968,7 +951,7 @@ function renderCategories() {
   ];
   for (const s of specials) els.categoryList.appendChild(catRow(s, true));
 
-  const cats = (state?.categories || [])
+  const cats = (state.categories || [])
     .slice().sort((a, b) => a.name.localeCompare(b.name))
     .filter(c => c.name.toLowerCase().includes(ui.catSearch));
 
@@ -2042,10 +2025,15 @@ async function confirmCommRequest(requestId) {
   if (r.status === 'confirmed') { alert('Richiesta già confermata.'); return; }
 
   const productList = (r.items || []).map(it => `${it.productName} ×${it.qty}`).join(', ');
-  if (!confirm(`Confermare la richiesta N°${r.requestNumber} di ${r.name}?\n\n${productList}\n\nLo stock verrà scalato automaticamente.`)) return;
+  const hasBackorder = (r.items || []).some(it => it.isBackorder);
+  const confirmMsg = `Confermare la richiesta N°${r.requestNumber} di ${r.name}?\n\n${productList}` +
+    (hasBackorder ? `\n\n⚠ I prodotti in BACKORDER non verranno scalati dallo stock (da ordinare con ZGRA).` : '') +
+    `\n\nLo stock dei prodotti disponibili verrà scalato automaticamente.`;
+  if (!confirm(confirmMsg)) return;
 
   const errors = [];
   for (const item of (r.items || [])) {
+    if (item.isBackorder) continue; // backorder: no stock to check
     const p = state.products.find(x => x.id === item.productId);
     if (!p) { errors.push(`Prodotto non trovato: ${item.productName}`); continue; }
     const requestedUnits = item.unitMode === 'ct' ? (item.qty * (p.ctSize || 1)) : item.qty;
@@ -2064,6 +2052,11 @@ async function confirmCommRequest(requestId) {
   // Registra anche i lotti prelevati per includerli nel PDF
   const itemsWithLots = [];
   for (const item of (r.items || [])) {
+    if (item.isBackorder) {
+      // Backorder: no stock withdrawal — mark as ZGRA in the confirmed PDF
+      itemsWithLots.push({ ...item, lotsUsed: [], isBackorder: true });
+      continue;
+    }
     const p = state.products.find(x => x.id === item.productId);
     if (!p) continue;
     let remaining = item.unitMode === 'ct' ? (item.qty * (p.ctSize || 1)) : item.qty;
@@ -2145,20 +2138,34 @@ async function confirmCommRequest(requestId) {
       doc.setFont(undefined, 'normal');
       let rowIdx = 0;
       for (const item of itemsWithLots) {
+        const isBO = !!item.isBackorder;
         const lots = item.lotsUsed || [];
-        const lotStr = lots.length
-          ? lots.map(l => `${l.expiry} (${l.units} u.)`).join(', ')
-          : '—';
+        const lotStr = isBO ? 'BACKORDER — ZGRA' : (lots.length ? lots.map(l => `${l.expiry} (${l.units} u.)`).join(', ') : '—');
+        const rowH = isBO ? 14 : 8;
         if (y > 275) { doc.addPage(); y = 16; }
         const bg = rowIdx % 2 === 0 ? [255, 255, 255] : [248, 250, 250];
-        doc.setFillColor(...bg); doc.rect(14, y - 4, 182, 8, 'F');
+        doc.setFillColor(...bg); doc.rect(14, y - 4, 182, rowH, 'F');
+        if (isBO) {
+          // orange left border for backorder rows
+          doc.setFillColor(240, 173, 78); doc.rect(14, y - 4, 3, rowH, 'F');
+        }
+        doc.setTextColor(0, 0, 0);
         doc.text(String(rowIdx + 1),                       16,  y + 1);
         doc.text(item.productName.substring(0, 38),        24,  y + 1);
-        const lotLines = doc.splitTextToSize(lotStr, 38);
-        doc.text(lotLines,                                 110, y + 1);
+        if (isBO) {
+          doc.setFont(undefined, 'bold'); doc.setTextColor(180, 80, 0);
+          doc.text('BACKORDER', 110, y + 1);
+          doc.setFontSize(8); doc.setFont(undefined, 'normal');
+          doc.text('⚠ DA ORDINARE CON ZGRA', 110, y + 8);
+          doc.setFontSize(10); doc.setTextColor(0, 0, 0);
+        } else {
+          const lotLines = doc.splitTextToSize(lotStr, 38);
+          doc.text(lotLines, 110, y + 1);
+        }
+        doc.setFont(undefined, 'normal'); doc.setTextColor(0, 0, 0);
         doc.text(String(item.qty),                         154, y + 1);
         doc.text(item.unitMode === 'ct' ? 'CT' : 'unità', 165, y + 1);
-        y += 8 * lotLines.length;
+        y += rowH;
         rowIdx++;
       }
 
