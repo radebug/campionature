@@ -323,9 +323,13 @@ function updateCartUIForRole() {
           <span>Destinazione</span>
           <input id="commDestination" type="text" placeholder="Paese / città" autocomplete="off" />
         </label>
-        <label class="row" style="margin-bottom:8px">
-          <span>Indirizzo</span>
+        <label class="row" style="margin-bottom:4px">
+          <span>Indirizzo <span style="color:#e74c3c">*</span></span>
           <input id="commAddress" type="text" placeholder="Via, numero civico, CAP" autocomplete="off" />
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#555;margin-bottom:8px;cursor:pointer;padding-left:2px">
+          <input type="checkbox" id="commNoAddress" style="width:auto;margin:0" />
+          Non ho un indirizzo
         </label>
         <label class="row" style="margin-bottom:8px">
           <span>Campionatura richiesta per il</span>
@@ -361,6 +365,13 @@ function updateCartUIForRole() {
         if (this.checked) { dateInput.value = ''; dateInput.disabled = true; }
         else { dateInput.disabled = false; }
       });
+
+      // "Non ho un indirizzo" checkbox disables address field
+      document.getElementById('commNoAddress').addEventListener('change', function() {
+        const addrInput = document.getElementById('commAddress');
+        if (this.checked) { addrInput.value = ''; addrInput.disabled = true; }
+        else { addrInput.disabled = false; }
+      });
     }
 
     document.getElementById('comm-fields').style.display = '';
@@ -376,18 +387,22 @@ function updateCartUIForRole() {
 async function sendSamplingRequest() {
   if (!shipmentCart.length) { alert("Il carrello è vuoto."); return; }
 
+
+  const asap        = document.getElementById('commAsSoonAsPossible')?.checked;
+  const delivDate   = asap ? 'Il prima possibile' : (document.getElementById('commDeliveryDate')?.value || '').trim();
+
   const name        = (document.getElementById('commName')?.value || '').trim();
   const email       = (document.getElementById('commEmail')?.value || '').trim();
   const reference   = (document.getElementById('commReference')?.value || '').trim();
   const destination = (document.getElementById('commDestination')?.value || '').trim();
-  const address     = (document.getElementById('commAddress')?.value || '').trim();
+  const noAddress   = document.getElementById('commNoAddress')?.checked;
+  const address     = noAddress ? 'Non fornito' : (document.getElementById('commAddress')?.value || '').trim();
   const notes       = (document.getElementById('commNotes')?.value || '').trim();
-  const asap        = document.getElementById('commAsSoonAsPossible')?.checked;
-  const delivDate   = asap ? 'Il prima possibile' : (document.getElementById('commDeliveryDate')?.value || '').trim();
 
   if (!name)      { alert("Il campo Nome Commerciale è obbligatorio."); document.getElementById('commName')?.focus(); return; }
   if (!email)     { alert("Il campo Email è obbligatorio."); document.getElementById('commEmail')?.focus(); return; }
   if (!reference) { alert("Il campo Riferimento è obbligatorio."); document.getElementById('commReference')?.focus(); return; }
+  if (!noAddress && !address) { alert("Il campo Indirizzo è obbligatorio. Se non hai un indirizzo, spunta 'Non ho un indirizzo'."); document.getElementById('commAddress')?.focus(); return; }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert("Inserisci un indirizzo email valido."); document.getElementById('commEmail')?.focus(); return; }
   if (!EMAILJS_CONFIGURED) { alert("⚠ EmailJS non è configurato. Contatta l'amministratore."); return; }
 
@@ -557,6 +572,8 @@ function clearCommCart() {
   });
   const asap = document.getElementById('commAsSoonAsPossible');
   if (asap) asap.checked = false;
+  const noAddr = document.getElementById('commNoAddress');
+  if (noAddr) noAddr.checked = false;
   renderCart();
   updateCartUIForRole();
 }
@@ -705,17 +722,19 @@ function wire() {
     const codes = splitLines(els.prodCodes.value);
     const notes = (els.prodNotes.value || "").trim();
     const imageFileName = (els.prodImageFileName.value || "").trim();
+    const discontinued = !!(document.getElementById('prodDiscontinued')?.checked);
     if (ui.editingProductId) {
       const p = state.products.find(x => x.id === ui.editingProductId);
       if (!p) return;
       p.name = name; p.ctSize = ctSize; p.customsCode = customsCode; p.unitWeightKg = unitWeightKg;
       p.categoryIds = selectedCategoryIds; delete p.categoryId;
       p.wordings = wordings; p.codes = codes; p.notes = notes; p.imageFileName = imageFileName;
+      p.discontinued = discontinued;
       p.lots = normalizeLots(p.lots);
     } else {
       state.products.push({
         id: uid("prod"), name, ctSize, customsCode, unitWeightKg,
-        categoryIds: selectedCategoryIds, wordings, codes, notes, imageFileName, lots: [],
+        categoryIds: selectedCategoryIds, wordings, codes, notes, imageFileName, lots: [], discontinued,
       });
     }
     ui.editingProductId = null; els.prodDlg.close(); setDirty(true); render();
@@ -927,7 +946,8 @@ function renderCategories() {
     { id: "__in__", name: "✅ In stock (Usable)", icon: "" },
     { id: "__low__", name: "⚠️ Low stock (<10)", icon: "" },
     { id: "__out__", name: "❌ Out of stock (0)", icon: "" },
-    { id: "__exp__", name: "⏳ Expiring / Expired", icon: "" }
+    { id: "__exp__", name: "⏳ Expiring / Expired", icon: "" },
+    { id: "__disc__", name: "🚫 Discontinued", icon: "" }
   ];
   for (const s of specials) els.categoryList.appendChild(catRow(s, true));
 
@@ -974,6 +994,7 @@ function renderFilterLine() {
   else if (ui.selectedCategoryId === "__low__") label = "Low stock (1–10)";
   else if (ui.selectedCategoryId === "__out__") label = "Out of stock";
   else if (ui.selectedCategoryId === "__exp__") label = "Expiring / Expired";
+  else if (ui.selectedCategoryId === "__disc__") label = "Discontinued";
   else label = state.categories.find(c => c.id === ui.selectedCategoryId)?.name || "Uncategorized";
 
   if (els.filterLine) els.filterLine.innerHTML = `Filter: <strong>${label}</strong>${ui.search ? ` &nbsp;·&nbsp; Search: "<em>${ui.search}</em>"` : ""}`;
@@ -1012,6 +1033,7 @@ function filteredProducts() {
           return s === "expiring" || s === "expired" || s === "risky";
         });
       }
+      if (ui.selectedCategoryId === "__disc__") return !!p.discontinued;
       if (state.categories.some(c => c.id === ui.selectedCategoryId)) {
         return (p.categoryIds || []).includes(ui.selectedCategoryId);
       }
@@ -1042,6 +1064,13 @@ function productCard(p) {
   }
 
   node.querySelector(".pName").textContent = p.name;
+  if (p.discontinued) {
+    const discBadge = document.createElement('span');
+    discBadge.className = 'disc-badge';
+    discBadge.textContent = '🚫 Discontinued';
+    node.querySelector(".pName").appendChild(discBadge);
+    cardEl.classList.add('cardDiscontinued');
+  }
   const names = (p.categoryIds || []).map(id => state.categories.find(c => c.id === id)?.name).filter(Boolean);
   node.querySelector(".pCat").textContent = names.length ? names.join(", ") : "Uncategorized";
 
@@ -1121,9 +1150,22 @@ function productCard(p) {
     node.querySelector('[data-act="stock"]').style.display = "none";
     node.querySelector('[data-act="edit"]').style.display = "none";
     node.querySelector('[data-act="del"]').style.display = "none";
+    // If out of stock, change cart button to "Backorder"
+    const cartBtn = node.querySelector('[data-act="ship"]');
+    if (cartBtn && totalStock(p) === 0) {
+      cartBtn.textContent = "⏳ Backorder";
+      cartBtn.classList.add("btn-backorder");
+    }
   } else if (!isAdmin()) {
+    // Viewer: hide buttons and stock info entirely
     node.querySelector('[data-act="edit"]').style.display = "none";
     node.querySelector('[data-act="del"]').style.display = "none";
+    node.querySelector('[data-act="stock"]').style.display = "none";
+    node.querySelector('[data-act="ship"]').style.display = "none";
+    node.querySelector('[data-act="info"]').style.display = "none";
+    // Hide stock line
+    const stockLine = node.querySelector('.stockLine');
+    if (stockLine) stockLine.style.display = "none";
   }
   node.querySelector('[data-act="del"]').addEventListener("click", () => {
     if (!confirm(`Delete "${p.name}"?`)) return;
@@ -1185,6 +1227,8 @@ function openProductDlg(id) {
     for (const cb of els.prodCategoriesBox.querySelectorAll('input[type="checkbox"]')) cb.checked = selectedIds.includes(cb.value);
     els.prodWordings.value = (p.wordings || []).join("\n"); els.prodCodes.value = (p.codes || []).join("\n");
     els.prodNotes.value = p.notes || ""; els.prodImageFileName.value = p.imageFileName || "";
+    const prodDisc = document.getElementById('prodDiscontinued');
+    if (prodDisc) prodDisc.checked = !!p.discontinued;
     renderProductPreview(p);
   } else {
     els.prodTitle.textContent = "+ Add product";
@@ -1196,6 +1240,8 @@ function openProductDlg(id) {
       if (cb) cb.checked = true;
     }
     els.prodWordings.value = ""; els.prodCodes.value = ""; els.prodNotes.value = ""; els.prodImageFileName.value = "";
+    const prodDisc2 = document.getElementById('prodDiscontinued');
+    if (prodDisc2) prodDisc2.checked = false;
     renderProductPreview(null);
   }
   els.prodDlg.showModal(); setTimeout(() => els.prodName.focus(), 50);
@@ -1546,6 +1592,28 @@ function getLotKey(expiry) { return String(expiry || "__unknown__"); }
 function addProductToShipmentCart(productId) {
   const p = state.products.find(x => x.id === productId);
   if (!p) return;
+
+  // Commerciale: allow backorder if out of stock (but not discontinued - handled by mod 5)
+  if (isCommerciale()) {
+    // Modifica 5: Block order of discontinued products with no stock
+    if (p.discontinued && totalStock(p) === 0) {
+      alert(`Il prodotto "${p.name}" è Discontinued e non è disponibile a stock. Non è possibile ordinarlo.`);
+      return;
+    }
+    const firstLot = sortedRealLotsForShipping(p).find(l => l.qty > 0);
+    if (!firstLot) {
+      // Out of stock: add as backorder
+      const existing = shipmentCart.find(it => it.productId === productId && it.isBackorder);
+      if (existing) { existing.qty += 1; }
+      else { shipmentCart.push({ id: uid("cart"), productId: p.id, productName: p.name, lotExpiry: "__backorder__", unitMode: "units", qty: 1, isBackorder: true }); }
+      renderShipmentCart(); return;
+    }
+    const existing = shipmentCart.find(it => it.productId === productId && getLotKey(it.lotExpiry) === getLotKey(firstLot.expiry) && it.unitMode === "units");
+    if (existing) existing.qty += 1;
+    else shipmentCart.push({ id: uid("cart"), productId: p.id, productName: p.name, lotExpiry: firstLot.expiry, unitMode: "units", qty: 1 });
+    renderShipmentCart(); return;
+  }
+
   const firstLot = sortedRealLotsForShipping(p).find(l => l.qty > 0);
   if (!firstLot) { alert("No available stock lots for this product."); return; }
   const existing = shipmentCart.find(it => it.productId === productId && getLotKey(it.lotExpiry) === getLotKey(firstLot.expiry) && it.unitMode === "units");
@@ -1622,14 +1690,18 @@ function renderShipmentCart() {
         <div class="shipmentCartMain">
           <div class="shipmentCartItemHead">
             <div>
-              <div class="shipmentCartItemName">${escapeHtml(item.productName)}</div>
-              <div class="shipmentCartItemSub">${p.ctSize ? `CT: ${p.ctSize}` : 'No CT'}${item.unitMode === 'ct' ? ' · boxes mode' : ' · units mode'}</div>
+              <div class="shipmentCartItemName">${escapeHtml(item.productName)}${item.isBackorder ? ' <span style="background:#f0ad4e;color:#fff;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:4px">BACKORDER</span>' : ''}</div>
+              <div class="shipmentCartItemSub">${p.ctSize ? `CT: ${p.ctSize}` : 'No CT'}${item.isBackorder ? ' · backorder' : (item.unitMode === 'ct' ? ' · boxes mode' : ' · units mode')}</div>
             </div>
             <button class="btn small ghost danger" type="button" data-cart-act="remove">✕</button>
           </div>
           <div class="shipmentCartGrid">
-            <label class="row"><span>Lot</span><select data-cart-act="lot">${buildLotOptionsHtml(p, item.lotExpiry)}</select></label>
-            <label class="row"><span>Mode</span><select data-cart-act="mode">${unitOptions.join('')}</select></label>
+            ${item.isBackorder
+              ? `<label class="row"><span>Lot</span><select data-cart-act="lot" disabled><option value="__backorder__">Backorder Available</option></select></label>
+                 <label class="row"><span>Mode</span><select data-cart-act="mode" disabled><option value="units">Units</option></select></label>`
+              : `<label class="row"><span>Lot</span><select data-cart-act="lot">${buildLotOptionsHtml(p, item.lotExpiry)}</select></label>
+                 <label class="row"><span>Mode</span><select data-cart-act="mode">${unitOptions.join('')}</select></label>`
+            }
             <label class="row"><span>Qty</span><input data-cart-act="qty" type="number" min="1" step="1" value="${Math.max(1,Math.trunc(Number(item.qty)||1))}"></label>
             <div class="cartMiniBtns">
               <button class="btn small ghost" type="button" data-cart-act="minus">−</button>
@@ -1646,6 +1718,11 @@ function renderShipmentCart() {
     const meta = row.querySelector('[data-cart-meta]');
 
     function syncMeta() {
+      if (item.isBackorder) {
+        meta.textContent = `⏳ Backorder Available — verrà evaso appena disponibile`;
+        meta.classList.remove('is-error');
+        return;
+      }
       const availableUnits = shipmentItemAvailableUnits(item);
       const requestedUnits = cartItemRequestedUnits(item);
       const status = requestedUnits > availableUnits ? '⚠ Not enough stock.' : '✓ Ready';

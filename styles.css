@@ -1121,3 +1121,34 @@ input:disabled { background: #f8f9f9; color: #999; cursor: not-allowed; }
   .thumb { min-height: 120px; }
   .dlgBody, .dlgBody.wide { width: calc(100vw - 16px); padding: 14px; }
 }
+
+/* ============================
+   DISCONTINUED styles
+   ============================ */
+.disc-badge {
+  display: inline-block;
+  background: #c0392b;
+  color: #fff;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.cardDiscontinued {
+  opacity: 0.75;
+  border: 2px solid #c0392b !important;
+}
+
+.cardDiscontinued .stockTotal {
+  color: #c0392b !important;
+}
+
+.btn-backorder {
+  background: linear-gradient(to bottom, #f0ad4e, #e8971a) !important;
+  border-color: #d68910 !important;
+  color: #fff !important;
+}
