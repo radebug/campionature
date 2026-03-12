@@ -1156,6 +1156,13 @@ function productCard(p) {
       cartBtn.textContent = "⏳ Backorder";
       cartBtn.classList.add("btn-backorder");
     }
+  } else if (isAdmin()) {
+    // Admin (omaggi): if out of stock show Backorder button
+    const cartBtn = node.querySelector('[data-act="ship"]');
+    if (cartBtn && totalStock(p) === 0) {
+      cartBtn.textContent = "⏳ Backorder";
+      cartBtn.classList.add("btn-backorder");
+    }
   } else if (!isAdmin()) {
     // Viewer: hide buttons and stock info entirely
     node.querySelector('[data-act="edit"]').style.display = "none";
@@ -1593,10 +1600,10 @@ function addProductToShipmentCart(productId) {
   const p = state.products.find(x => x.id === productId);
   if (!p) return;
 
-  // Commerciale: allow backorder if out of stock (but not discontinued - handled by mod 5)
-  if (isCommerciale()) {
-    // Modifica 5: Block order of discontinued products with no stock
-    if (p.discontinued && totalStock(p) === 0) {
+  // Both admin (omaggi) and commerciale: allow backorder if out of stock
+  if (isAdmin() || isCommerciale()) {
+    // Block discontinued products with no stock for commerciale (mod 5)
+    if (isCommerciale() && p.discontinued && totalStock(p) === 0) {
       alert(`Il prodotto "${p.name}" è Discontinued e non è disponibile a stock. Non è possibile ordinarlo.`);
       return;
     }
@@ -2025,15 +2032,10 @@ async function confirmCommRequest(requestId) {
   if (r.status === 'confirmed') { alert('Richiesta già confermata.'); return; }
 
   const productList = (r.items || []).map(it => `${it.productName} ×${it.qty}`).join(', ');
-  const hasBackorder = (r.items || []).some(it => it.isBackorder);
-  const confirmMsg = `Confermare la richiesta N°${r.requestNumber} di ${r.name}?\n\n${productList}` +
-    (hasBackorder ? `\n\n⚠ I prodotti in BACKORDER non verranno scalati dallo stock (da ordinare con ZGRA).` : '') +
-    `\n\nLo stock dei prodotti disponibili verrà scalato automaticamente.`;
-  if (!confirm(confirmMsg)) return;
+  if (!confirm(`Confermare la richiesta N°${r.requestNumber} di ${r.name}?\n\n${productList}\n\nLo stock verrà scalato automaticamente.`)) return;
 
   const errors = [];
   for (const item of (r.items || [])) {
-    if (item.isBackorder) continue; // backorder: no stock to check
     const p = state.products.find(x => x.id === item.productId);
     if (!p) { errors.push(`Prodotto non trovato: ${item.productName}`); continue; }
     const requestedUnits = item.unitMode === 'ct' ? (item.qty * (p.ctSize || 1)) : item.qty;
@@ -2052,11 +2054,6 @@ async function confirmCommRequest(requestId) {
   // Registra anche i lotti prelevati per includerli nel PDF
   const itemsWithLots = [];
   for (const item of (r.items || [])) {
-    if (item.isBackorder) {
-      // Backorder: no stock withdrawal — mark as ZGRA in the confirmed PDF
-      itemsWithLots.push({ ...item, lotsUsed: [], isBackorder: true });
-      continue;
-    }
     const p = state.products.find(x => x.id === item.productId);
     if (!p) continue;
     let remaining = item.unitMode === 'ct' ? (item.qty * (p.ctSize || 1)) : item.qty;
@@ -2138,34 +2135,20 @@ async function confirmCommRequest(requestId) {
       doc.setFont(undefined, 'normal');
       let rowIdx = 0;
       for (const item of itemsWithLots) {
-        const isBO = !!item.isBackorder;
         const lots = item.lotsUsed || [];
-        const lotStr = isBO ? 'BACKORDER — ZGRA' : (lots.length ? lots.map(l => `${l.expiry} (${l.units} u.)`).join(', ') : '—');
-        const rowH = isBO ? 14 : 8;
+        const lotStr = lots.length
+          ? lots.map(l => `${l.expiry} (${l.units} u.)`).join(', ')
+          : '—';
         if (y > 275) { doc.addPage(); y = 16; }
         const bg = rowIdx % 2 === 0 ? [255, 255, 255] : [248, 250, 250];
-        doc.setFillColor(...bg); doc.rect(14, y - 4, 182, rowH, 'F');
-        if (isBO) {
-          // orange left border for backorder rows
-          doc.setFillColor(240, 173, 78); doc.rect(14, y - 4, 3, rowH, 'F');
-        }
-        doc.setTextColor(0, 0, 0);
+        doc.setFillColor(...bg); doc.rect(14, y - 4, 182, 8, 'F');
         doc.text(String(rowIdx + 1),                       16,  y + 1);
         doc.text(item.productName.substring(0, 38),        24,  y + 1);
-        if (isBO) {
-          doc.setFont(undefined, 'bold'); doc.setTextColor(180, 80, 0);
-          doc.text('BACKORDER', 110, y + 1);
-          doc.setFontSize(8); doc.setFont(undefined, 'normal');
-          doc.text('⚠ DA ORDINARE CON ZGRA', 110, y + 8);
-          doc.setFontSize(10); doc.setTextColor(0, 0, 0);
-        } else {
-          const lotLines = doc.splitTextToSize(lotStr, 38);
-          doc.text(lotLines, 110, y + 1);
-        }
-        doc.setFont(undefined, 'normal'); doc.setTextColor(0, 0, 0);
+        const lotLines = doc.splitTextToSize(lotStr, 38);
+        doc.text(lotLines,                                 110, y + 1);
         doc.text(String(item.qty),                         154, y + 1);
         doc.text(item.unitMode === 'ct' ? 'CT' : 'unità', 165, y + 1);
-        y += rowH;
+        y += 8 * lotLines.length;
         rowIdx++;
       }
 
