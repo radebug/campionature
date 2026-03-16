@@ -1446,3 +1446,51 @@ input:disabled { background: #f8f9f9; color: #999; cursor: not-allowed; }
 .bc-remove-actions {
   padding: 8px 16px 12px; display: flex; justify-content: flex-end;
 }
+
+
+/* Barcode scanner improvements */
+.bc-tools-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 4px;
+  flex-wrap: wrap;
+}
+.bc-tool-btn {
+  min-width: 132px;
+}
+.bc-tool-btn.is-on {
+  background: #fff4cc;
+  border-color: #f1c40f;
+  color: #7d6608;
+}
+.bc-scan-hint {
+  font-size: 12px;
+  color: var(--text2, #666);
+  flex: 1;
+}
+.bc-status-pill {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 3;
+  background: rgba(0,0,0,.68);
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  backdrop-filter: blur(4px);
+}
+.bc-crosshair {
+  inset: 16% 10%;
+  border-radius: 10px;
+}
+.bc-crosshair::before { top: 12%; bottom: 12%; }
+.bc-crosshair::after  { left: 10%; right: 10%; }
+@media (max-width: 640px) {
+  .bc-cam-wrap { max-height: 300px; }
+  .bc-tools-row { padding-top: 10px; }
+  .bc-tool-btn { width: 100%; }
+  .bc-scan-hint { width: 100%; }
+}
