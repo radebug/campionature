@@ -40,6 +40,11 @@
           <video id="bcVideo" autoplay playsinline muted></video>
           <div class="bc-crosshair"></div>
           <canvas id="bcCanvas" hidden></canvas>
+          <canvas id="bcProcessedCanvas" hidden></canvas>
+        </div>
+        <div class="bc-tools-row">
+          <button class="btn ghost bc-tool-btn" id="bcTorchBtn" type="button" style="display:none">🔦 Flash off</button>
+          <div class="bc-scan-hint" id="bcScanHint">Per sfondi colorati aumenta la luce o usa il flash.</div>
         </div>
         <div class="bc-manual-row">
           <input id="bcManualInput" type="text" placeholder="Or type / scan barcode here…" autocomplete="off" />
@@ -64,11 +69,15 @@
   }
 
   /* ── State del scanner ── */
-  let scanMode    = 'add';      // 'add' | 'check' | 'remove'
-  let stream      = null;
-  let scanLoop    = null;
-  let lastBarcode = null;
-  let removedItems = [];        // [{productId, productName, qty, expiry}]
+  let scanMode       = 'add';      // 'add' | 'check' | 'remove'
+  let stream         = null;
+  let scanLoop       = null;
+  let lastBarcode    = null;
+  let removedItems   = [];      // [{productId, productName, qty, expiry}]
+  let barcodeDetector = null;
+  let currentTrack   = null;
+  let torchAvailable = false;
+  let torchEnabled   = false;
 
   /* ── Apri / chiudi ── */
   function openScanner(mode) {
@@ -101,49 +110,147 @@
     const video = document.getElementById('bcVideo');
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
       });
+      currentTrack = stream.getVideoTracks?.()[0] || null;
+      barcodeDetector = window.BarcodeDetector
+        ? new BarcodeDetector({ formats: ['ean_13','ean_8','code_128','code_39','upc_a','upc_e','qr_code','data_matrix'] })
+        : null;
       video.srcObject = stream;
       await video.play();
+      await setupTorchUI();
       scheduleScanLoop();
     } catch (e) {
       showResult('⚠️ Camera not available: ' + e.message, 'warn');
+      updateTorchUI();
     }
   }
 
   function stopCamera() {
     if (scanLoop) { clearInterval(scanLoop); scanLoop = null; }
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    currentTrack = null;
+    torchAvailable = false;
+    torchEnabled = false;
+    updateTorchUI();
     const video = document.getElementById('bcVideo');
     if (video) video.srcObject = null;
   }
 
   function scheduleScanLoop() {
     if (scanLoop) clearInterval(scanLoop);
-    scanLoop = setInterval(grabFrame, 300);
+    scanLoop = setInterval(grabFrame, 220);
+  }
+
+  async function setupTorchUI() {
+    torchAvailable = false;
+    torchEnabled = false;
+    try {
+      if (!currentTrack || typeof currentTrack.getCapabilities !== 'function') {
+        updateTorchUI();
+        return;
+      }
+      const caps = currentTrack.getCapabilities() || {};
+      torchAvailable = !!caps.torch;
+    } catch {
+      torchAvailable = false;
+    }
+    updateTorchUI();
+  }
+
+  function updateTorchUI() {
+    const btn = document.getElementById('bcTorchBtn');
+    if (!btn) return;
+    btn.style.display = torchAvailable ? '' : 'none';
+    btn.textContent = torchEnabled ? '🔦 Flash on' : '🔦 Flash off';
+    btn.classList.toggle('is-on', !!torchEnabled);
+    btn.setAttribute('aria-pressed', torchEnabled ? 'true' : 'false');
+  }
+
+  async function toggleTorch() {
+    if (!torchAvailable || !currentTrack) return;
+    try {
+      torchEnabled = !torchEnabled;
+      await currentTrack.applyConstraints({ advanced: [{ torch: torchEnabled }] });
+    } catch (e) {
+      torchEnabled = false;
+      showResult('⚠️ Flash non supportato su questo telefono/browser.', 'warn');
+    }
+    updateTorchUI();
+  }
+
+  async function detectFromSource(source) {
+    if (!barcodeDetector || !source) return [];
+    try {
+      return await barcodeDetector.detect(source);
+    } catch {
+      return [];
+    }
+  }
+
+  function enhanceFrame(sourceCanvas, targetCanvas, mode) {
+    const w = sourceCanvas.width;
+    const h = sourceCanvas.height;
+    targetCanvas.width = w;
+    targetCanvas.height = h;
+    const srcCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    const dstCtx = targetCanvas.getContext('2d', { willReadFrequently: true });
+    const src = srcCtx.getImageData(0, 0, w, h);
+    const data = src.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+
+      if (mode === 'contrast') {
+        gray = (gray - 128) * 2.2 + 128;
+        gray = Math.max(0, Math.min(255, gray));
+      } else if (mode === 'threshold') {
+        const boosted = (gray - 128) * 2.4 + 128;
+        gray = boosted > 150 ? 255 : 0;
+      }
+
+      data[i] = data[i + 1] = data[i + 2] = gray;
+      data[i + 3] = 255;
+    }
+
+    dstCtx.putImageData(src, 0, 0);
+    return targetCanvas;
   }
 
   async function grabFrame() {
     const video  = document.getElementById('bcVideo');
     const canvas = document.getElementById('bcCanvas');
+    const processedCanvas = document.getElementById('bcProcessedCanvas');
     if (!video || !canvas || video.readyState < 2) return;
     canvas.width  = video.videoWidth;
     canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(video, 0, 0);
 
-    if (!window.BarcodeDetector) return; // fallback: solo input manuale
-    try {
-      const detector = new BarcodeDetector({ formats: ['ean_13','ean_8','code_128','code_39','upc_a','upc_e','qr_code','data_matrix'] });
-      const codes = await detector.detect(canvas);
+    if (!barcodeDetector) return; // fallback: solo input manuale
+
+    const variants = [
+      canvas,
+      enhanceFrame(canvas, processedCanvas, 'contrast'),
+      enhanceFrame(canvas, processedCanvas, 'threshold')
+    ];
+
+    for (const variant of variants) {
+      const codes = await detectFromSource(variant);
       if (codes.length > 0) {
         const raw = codes[0].rawValue;
-        if (raw !== lastBarcode) {
+        if (raw && raw !== lastBarcode) {
           lastBarcode = raw;
           handleBarcode(raw);
         }
+        return;
       }
-    } catch { /* silenzioso */ }
+    }
   }
 
   /* ── Gestione barcode ── */
@@ -445,6 +552,9 @@
     const manualBtn   = document.getElementById('bcManualBtn');
     manualBtn.onclick = () => { const v = manualInput.value.trim(); if (v) { lastBarcode = null; handleBarcode(v); } };
     manualInput.addEventListener('keydown', e => { if (e.key === 'Enter') manualBtn.click(); });
+
+    const torchBtn = document.getElementById('bcTorchBtn');
+    if (torchBtn) torchBtn.onclick = toggleTorch;
 
     // Undo all
     document.getElementById('bcUndoAll').onclick = () => {
