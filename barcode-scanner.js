@@ -458,6 +458,7 @@
     if (!sub || document.getElementById('btnScanAdd')) return;
 
     const sep = document.createElement('div');
+    sep.id = 'bcSep';
     sep.style.cssText = 'width:1px;background:rgba(255,255,255,.15);margin:0 6px;align-self:stretch';
 
     const btnAdd = document.createElement('button');
@@ -479,7 +480,46 @@
     sub.appendChild(btnAdd);
     sub.appendChild(btnCheck);
     sub.appendChild(btnRemove);
+
+    refreshBarcodeButtons();
   }
+
+  /* ── Aggiorna visibilità bottoni in base al ruolo ── */
+  function refreshBarcodeButtons() {
+    const sep       = document.getElementById('bcSep');
+    const btnAdd    = document.getElementById('btnScanAdd');
+    const btnCheck  = document.getElementById('btnScanCheck');
+    const btnRemove = document.getElementById('btnScanRemove');
+    if (!btnAdd) return; // non ancora iniettati
+
+    // Determina ruolo corrente (portalSession è globale in app.js)
+    const loggedIn    = !!(typeof portalSession !== 'undefined' && portalSession?.token);
+    const adminRole   = typeof isAdmin === 'function' && isAdmin();
+    const commRole    = typeof isCommerciale === 'function' && isCommerciale();
+
+    if (!loggedIn) {
+      // Nessun login: tutti i bottoni barcode nascosti
+      if (sep)       sep.style.display       = 'none';
+      if (btnAdd)    btnAdd.style.display    = 'none';
+      if (btnCheck)  btnCheck.style.display  = 'none';
+      if (btnRemove) btnRemove.style.display = 'none';
+    } else if (commRole) {
+      // Commerciale/Acquisti: solo Check Stock
+      if (sep)       sep.style.display       = '';
+      if (btnAdd)    btnAdd.style.display    = 'none';
+      if (btnCheck)  btnCheck.style.display  = '';
+      if (btnRemove) btnRemove.style.display = 'none';
+    } else {
+      // Admin: tutti visibili
+      if (sep)       sep.style.display       = '';
+      if (btnAdd)    btnAdd.style.display    = '';
+      if (btnCheck)  btnCheck.style.display  = '';
+      if (btnRemove) btnRemove.style.display = '';
+    }
+  }
+
+  // Esponi la funzione globalmente così refreshAuthUI() in app.js può chiamarla
+  window.refreshBarcodeButtons = refreshBarcodeButtons;
 
   /* ── Init ── */
   document.addEventListener('DOMContentLoaded', () => {
