@@ -1,20 +1,25 @@
 /* =====================================================================
    BARCODE SCANNER MODULE — Campionature
-   Dipende da: state, isAdmin, openProductDlg, openStockDlg, totalStock,
-               normalizeLots, lotStatus, formatDateDMY, setDirty, render,
-               showAlert, showConfirm, uid, scheduleAutosave
+   Enhanced scanner with ZXing fallback, ITF-14 / GS1-128 support,
+   flashlight toggle and better status UI.
    ===================================================================== */
 
 (function () {
-  /* ── helpers locali ── */
   function findProductByBarcode(barcode) {
     if (!state?.products) return null;
+    const clean = normalizeScannedCode(barcode);
     return state.products.find(p =>
-      Array.isArray(p.codes) && p.codes.some(c => c.trim() === barcode.trim())
+      Array.isArray(p.codes) && p.codes.some(c => normalizeScannedCode(c) === clean)
     ) || null;
   }
 
-  /* ── Overlay principale ── */
+  function normalizeScannedCode(value) {
+    let v = String(value || '').trim();
+    // ZXing can prepend GS1 symbology identifier for FNC1 / GS1-128
+    v = v.replace(/^\]C1/, '').replace(/^\(]C1\)/, '');
+    return v;
+  }
+
   function buildScannerUI() {
     if (document.getElementById('barcodeOverlay')) return;
 
@@ -22,34 +27,40 @@
     overlay.id = 'barcodeOverlay';
     overlay.innerHTML = `
       <div class="bc-panel" id="bcPanel">
-        <!-- Header -->
         <div class="bc-header">
           <span class="bc-title" id="bcTitle">📷 Barcode Scanner</span>
           <button class="bc-close" id="bcClose">✕</button>
         </div>
 
-        <!-- Mode buttons -->
         <div class="bc-modes">
           <button class="bc-mode-btn active" data-mode="add">➕ Add Product</button>
           <button class="bc-mode-btn" data-mode="check">🔍 Check Stock</button>
           <button class="bc-mode-btn" data-mode="remove">➖ Remove Product</button>
         </div>
 
-        <!-- Camera + manual input -->
         <div class="bc-cam-wrap">
           <video id="bcVideo" autoplay playsinline muted></video>
           <div class="bc-crosshair"></div>
           <canvas id="bcCanvas" hidden></canvas>
         </div>
+
+        <div class="bc-camera-tools">
+          <button class="btn ghost small" id="bcTorchBtn" type="button">🔦 Flash non disponibile</button>
+          <button class="btn ghost small" id="bcRestartBtn" type="button">↻ Riavvia camera</button>
+        </div>
+        <div class="bc-camera-hint" id="bcCameraHint">
+          Prova a inquadrare il codice da vicino. Questo scanner legge anche <b>ITF-14 / GTIN-14</b>,
+          <b>EAN</b>, <b>UPC</b>, <b>QR</b> e <b>CODE128 / GS1-128</b>.
+        </div>
+        <div class="bc-status" id="bcStatus">Avvio fotocamera…</div>
+
         <div class="bc-manual-row">
           <input id="bcManualInput" type="text" placeholder="Or type / scan barcode here…" autocomplete="off" />
           <button class="btn primary" id="bcManualBtn">OK</button>
         </div>
 
-        <!-- Result area -->
         <div class="bc-result" id="bcResult"></div>
 
-        <!-- Remove session list -->
         <div id="bcRemoveSection" style="display:none">
           <div class="bc-remove-title">📋 Removed this session</div>
           <div id="bcRemoveList" class="bc-remove-list"></div>
@@ -63,20 +74,23 @@
     attachScannerEvents(overlay);
   }
 
-  /* ── State del scanner ── */
-  let scanMode    = 'add';      // 'add' | 'check' | 'remove'
-  let stream      = null;
-  let scanLoop    = null;
+  let scanMode = 'add';
+  let stream = null;
   let lastBarcode = null;
-  let removedItems = [];        // [{productId, productName, qty, expiry}]
+  let removedItems = [];
+  let zxingReader = null;
+  let zxingControls = null;
+  let torchAvailable = false;
+  let torchEnabled = false;
+  let nativeScanLoop = null;
+  let pauseUntil = 0;
 
-  /* ── Apri / chiudi ── */
   function openScanner(mode) {
     buildScannerUI();
     scanMode = mode || 'add';
     lastBarcode = null;
+    pauseUntil = 0;
 
-    // aggiorna tab attivo
     document.querySelectorAll('.bc-mode-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.mode === scanMode);
     });
@@ -84,71 +98,277 @@
 
     document.getElementById('bcResult').innerHTML = '';
     document.getElementById('barcodeOverlay').style.display = 'flex';
-    startCamera();
     renderRemoveList();
+    startCamera();
   }
 
   function closeScanner() {
     stopCamera();
     const ov = document.getElementById('barcodeOverlay');
     if (ov) ov.style.display = 'none';
-    document.getElementById('bcResult').innerHTML = '';
+    const result = document.getElementById('bcResult');
+    if (result) result.innerHTML = '';
   }
 
-  /* ── Camera ── */
+  function setStatus(msg, level) {
+    const el = document.getElementById('bcStatus');
+    if (!el) return;
+    el.className = 'bc-status' + (level ? ' bc-status-' + level : '');
+    el.innerHTML = msg;
+  }
+
+  function updateTorchButton() {
+    const btn = document.getElementById('bcTorchBtn');
+    if (!btn) return;
+    btn.disabled = !torchAvailable;
+    btn.textContent = !torchAvailable
+      ? '🔦 Flash non disponibile'
+      : (torchEnabled ? '🔦 Spegni flash' : '🔦 Accendi flash');
+  }
+
+  async function loadZXingBrowser() {
+    if (window.ZXingBrowser) return window.ZXingBrowser;
+    await new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-zxing-browser="1"]');
+      if (existing) {
+        existing.addEventListener('load', resolve, { once: true });
+        existing.addEventListener('error', reject, { once: true });
+        return;
+      }
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js';
+      s.async = true;
+      s.dataset.zxingBrowser = '1';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Impossibile caricare ZXing dal CDN'));
+      document.head.appendChild(s);
+    });
+    return window.ZXingBrowser;
+  }
+
   async function startCamera() {
     stopCamera();
     const video = document.getElementById('bcVideo');
+    if (!video) return;
+
     try {
+      setStatus('Richiesta accesso fotocamera…', 'info');
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          focusMode: 'continuous'
+        }
       });
+
       video.srcObject = stream;
       await video.play();
-      scheduleScanLoop();
+      await applyBestEffortCameraSettings();
+      detectTorchSupport();
+      updateTorchButton();
+
+      let startedWithZXing = false;
+      try {
+        await startZXingScanner();
+        startedWithZXing = true;
+        setStatus('Scanner attivo. Supporto: EAN / UPC / QR / CODE128 / ITF-14 / GS1-128', 'ok');
+      } catch (err) {
+        console.warn('ZXing non disponibile, fallback BarcodeDetector:', err);
+      }
+
+      if (!startedWithZXing) {
+        startNativeScanLoop();
+        setStatus('Scanner attivo in modalità fallback. EAN / UPC / QR / CODE128', 'warn');
+      }
     } catch (e) {
-      showResult('⚠️ Camera not available: ' + e.message, 'warn');
+      setStatus('⚠️ Fotocamera non disponibile: ' + escHtml(e.message || 'errore sconosciuto'), 'warn');
+      showResult('⚠️ Camera not available: ' + escHtml(e.message || 'Unknown error'), 'warn');
+      updateTorchButton();
+    }
+  }
+
+  async function applyBestEffortCameraSettings() {
+    const track = stream?.getVideoTracks?.()[0];
+    if (!track) return;
+    const caps = typeof track.getCapabilities === 'function' ? track.getCapabilities() : {};
+    const advanced = [];
+
+    if (caps.focusMode && caps.focusMode.includes('continuous')) advanced.push({ focusMode: 'continuous' });
+    if (caps.exposureMode && caps.exposureMode.includes('continuous')) advanced.push({ exposureMode: 'continuous' });
+    if (caps.whiteBalanceMode && caps.whiteBalanceMode.includes('continuous')) advanced.push({ whiteBalanceMode: 'continuous' });
+    if (caps.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max >= 2) {
+      advanced.push({ zoom: Math.min(2, caps.zoom.max) });
+    }
+
+    if (advanced.length) {
+      try { await track.applyConstraints({ advanced }); } catch (_) {}
+    }
+  }
+
+  function detectTorchSupport() {
+    torchAvailable = false;
+    torchEnabled = false;
+
+    if (zxingControls && typeof zxingControls.switchTorch === 'function') {
+      torchAvailable = true;
+      return;
+    }
+
+    const track = stream?.getVideoTracks?.()[0];
+    if (!track || typeof track.getCapabilities !== 'function') return;
+    const caps = track.getCapabilities();
+    torchAvailable = !!caps.torch;
+  }
+
+  async function toggleTorch() {
+    if (!torchAvailable) {
+      setStatus('Il flash non è supportato da questo browser / telefono.', 'warn');
+      updateTorchButton();
+      return;
+    }
+
+    try {
+      if (zxingControls && typeof zxingControls.switchTorch === 'function') {
+        await zxingControls.switchTorch();
+        torchEnabled = !torchEnabled;
+      } else {
+        const track = stream?.getVideoTracks?.()[0];
+        if (!track) throw new Error('Track video non disponibile');
+        torchEnabled = !torchEnabled;
+        await track.applyConstraints({ advanced: [{ torch: torchEnabled }] });
+      }
+      updateTorchButton();
+      setStatus(torchEnabled ? 'Flash acceso.' : 'Flash spento.', 'ok');
+    } catch (err) {
+      torchEnabled = false;
+      updateTorchButton();
+      setStatus('Non riesco ad accendere il flash su questo dispositivo.', 'warn');
+      console.warn('Torch error', err);
+    }
+  }
+
+  async function startZXingScanner() {
+    const ZXingBrowser = await loadZXingBrowser();
+    if (!ZXingBrowser) throw new Error('ZXingBrowser non caricato');
+
+    const hints = new Map();
+    const f = ZXingBrowser.BarcodeFormat;
+    const d = ZXingBrowser.DecodeHintType;
+    hints.set(d.POSSIBLE_FORMATS, [
+      f.EAN_13,
+      f.EAN_8,
+      f.UPC_A,
+      f.UPC_E,
+      f.QR_CODE,
+      f.CODE_128,
+      f.CODE_39,
+      f.ITF,
+      f.DATA_MATRIX
+    ]);
+    hints.set(d.TRY_HARDER, true);
+
+    zxingReader = new ZXingBrowser.BrowserMultiFormatReader(hints);
+    const videoEl = document.getElementById('bcVideo');
+
+    zxingControls = await zxingReader.decodeFromVideoDevice(undefined, videoEl, (result, error, controls) => {
+      if (controls) zxingControls = controls;
+      if (result) {
+        onDetectedCode(result.getText ? result.getText() : String(result.text || result));
+      }
+    });
+
+    detectTorchSupport();
+    updateTorchButton();
+  }
+
+  function startNativeScanLoop() {
+    if (nativeScanLoop) clearInterval(nativeScanLoop);
+    nativeScanLoop = setInterval(grabFrameNative, 280);
+  }
+
+  async function grabFrameNative() {
+    if (Date.now() < pauseUntil) return;
+    const video = document.getElementById('bcVideo');
+    const canvas = document.getElementById('bcCanvas');
+    if (!video || !canvas || video.readyState < 2 || !window.BarcodeDetector) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+
+    const attempts = [
+      { sx: 0, sy: 0, sw: video.videoWidth, sh: video.videoHeight, filter: 'none' },
+      { sx: video.videoWidth * 0.1, sy: video.videoHeight * 0.15, sw: video.videoWidth * 0.8, sh: video.videoHeight * 0.7, filter: 'contrast(1.6) saturate(0.7) brightness(1.08)' },
+      { sx: video.videoWidth * 0.2, sy: video.videoHeight * 0.25, sw: video.videoWidth * 0.6, sh: video.videoHeight * 0.5, filter: 'grayscale(1) contrast(2.2) brightness(1.15)' }
+    ];
+
+    const detector = new BarcodeDetector({
+      formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code', 'data_matrix']
+    });
+
+    for (const a of attempts) {
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.filter = a.filter;
+      ctx.drawImage(video, a.sx, a.sy, a.sw, a.sh, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
+      try {
+        const codes = await detector.detect(canvas);
+        if (codes?.length) {
+          onDetectedCode(codes[0].rawValue);
+          return;
+        }
+      } catch (_) {}
     }
   }
 
   function stopCamera() {
-    if (scanLoop) { clearInterval(scanLoop); scanLoop = null; }
-    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    if (nativeScanLoop) { clearInterval(nativeScanLoop); nativeScanLoop = null; }
+
+    try {
+      if (zxingControls && typeof zxingControls.stop === 'function') zxingControls.stop();
+    } catch (_) {}
+    zxingControls = null;
+
+    try {
+      if (zxingReader && typeof zxingReader.reset === 'function') zxingReader.reset();
+    } catch (_) {}
+    zxingReader = null;
+
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+
     const video = document.getElementById('bcVideo');
     if (video) video.srcObject = null;
+
+    torchAvailable = false;
+    torchEnabled = false;
+    updateTorchButton();
   }
 
-  function scheduleScanLoop() {
-    if (scanLoop) clearInterval(scanLoop);
-    scanLoop = setInterval(grabFrame, 300);
+  function onDetectedCode(raw) {
+    const barcode = normalizeScannedCode(raw);
+    if (!barcode) return;
+    if (barcode === lastBarcode && Date.now() < pauseUntil) return;
+
+    lastBarcode = barcode;
+    pauseUntil = Date.now() + 1700;
+
+    if (navigator.vibrate) {
+      try { navigator.vibrate(120); } catch (_) {}
+    }
+
+    setStatus('Codice letto: <b>' + escHtml(barcode) + '</b>', 'ok');
+    handleBarcode(barcode);
   }
 
-  async function grabFrame() {
-    const video  = document.getElementById('bcVideo');
-    const canvas = document.getElementById('bcCanvas');
-    if (!video || !canvas || video.readyState < 2) return;
-    canvas.width  = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0);
-
-    if (!window.BarcodeDetector) return; // fallback: solo input manuale
-    try {
-      const detector = new BarcodeDetector({ formats: ['ean_13','ean_8','code_128','code_39','upc_a','upc_e','qr_code','data_matrix'] });
-      const codes = await detector.detect(canvas);
-      if (codes.length > 0) {
-        const raw = codes[0].rawValue;
-        if (raw !== lastBarcode) {
-          lastBarcode = raw;
-          handleBarcode(raw);
-        }
-      }
-    } catch { /* silenzioso */ }
-  }
-
-  /* ── Gestione barcode ── */
   async function handleBarcode(barcode) {
-    barcode = (barcode || '').trim();
+    barcode = normalizeScannedCode(barcode);
     if (!barcode) return;
 
     const product = findProductByBarcode(barcode);
@@ -162,11 +382,9 @@
     }
   }
 
-  /* ── ADD ── */
   async function handleAdd(barcode, product) {
     if (product) {
       showResult(`✅ Product already exists: <b>${escHtml(product.name)}</b><br><small>Code: ${escHtml(barcode)}</small>`, 'ok');
-      // offer to open edit dialog
       const resultEl = document.getElementById('bcResult');
       const editBtn = document.createElement('button');
       editBtn.className = 'btn small primary'; editBtn.style.marginTop = '8px';
@@ -178,7 +396,6 @@
       showResult(`🆕 New product — barcode: <b>${escHtml(barcode)}</b><br>Opening form…`, 'info');
       setTimeout(() => {
         closeScanner();
-        // Pre-fill the product dialog with the scanned code
         openProductDlg(null);
         setTimeout(() => {
           const codesEl = document.getElementById('prodCodes');
@@ -190,7 +407,6 @@
     }
   }
 
-  /* ── CHECK ── */
   function handleCheck(barcode, product) {
     if (!product) {
       showResult(`❓ Unknown barcode: <b>${escHtml(barcode)}</b><br><small>Product not found in catalogue.</small>`, 'warn');
@@ -221,7 +437,6 @@
       html += `</tbody></table>`;
     }
 
-    // Button to open full stock dialog
     html += `<button class="btn small primary bc-open-stock" style="margin-top:10px">📦 Manage Stock</button>`;
     showResult(html, 'ok');
 
@@ -231,7 +446,6 @@
     }, 50);
   }
 
-  /* ── REMOVE ── */
   async function handleRemove(barcode, product) {
     if (!product) {
       showResult(`❓ Unknown barcode: <b>${escHtml(barcode)}</b><br><small>Product not found in catalogue.</small>`, 'warn');
@@ -246,12 +460,10 @@
       return;
     }
 
-    // Show confirmation UI with lot picker
     const resultEl = document.getElementById('bcResult');
     let html = `<div class="bc-check-name">${escHtml(product.name)}</div>`;
     html += `<div style="margin-bottom:8px;font-size:13px;color:var(--text2)">Select lot and quantity to remove:</div>`;
 
-    // Lot selector
     html += `<div class="bc-remove-form">
       <label class="bc-remove-label">Lot / Expiry
         <select id="bcRemoveLot" class="bc-select">`;
@@ -260,66 +472,62 @@
       html += `<option value="${escHtml(l.expiry)}">${escHtml(label)} — Qty: ${l.qty}</option>`;
     }
     html += `</select></label>
-      <label class="bc-remove-label">Quantity
-        <input type="number" id="bcRemoveQty" value="1" min="1" class="bc-number-input" />
+      <label class="bc-remove-label">Qty
+        <input id="bcRemoveQty" class="bc-input" type="number" min="1" value="1" />
       </label>
-      <div class="bc-remove-btns">
-        <button class="btn danger" id="bcConfirmRemove">🗑 Confirm Remove</button>
-        <button class="btn ghost" id="bcCancelRemove">Cancel</button>
+      <div class="bc-remove-btnrow">
+        <button class="btn ghost" type="button" id="bcRemoveCancel">Cancel</button>
+        <button class="btn primary" type="button" id="bcRemoveConfirm">Confirm remove</button>
       </div>
     </div>`;
 
     showResult(html, 'warn');
 
-    document.getElementById('bcCancelRemove').onclick = () => {
-      showResult('', '');
-      lastBarcode = null;
+    const cancel = document.getElementById('bcRemoveCancel');
+    const confirm = document.getElementById('bcRemoveConfirm');
+    if (cancel) cancel.onclick = () => showResult('', '');
+    if (confirm) confirm.onclick = () => {
+      const expiry = document.getElementById('bcRemoveLot')?.value || '__unknown__';
+      const qty = parseInt(document.getElementById('bcRemoveQty')?.value || '0', 10);
+      doRemove(product, expiry, qty);
     };
 
-    document.getElementById('bcConfirmRemove').onclick = async () => {
-      const lotExpiry = document.getElementById('bcRemoveLot').value;
-      let qty = parseInt(document.getElementById('bcRemoveQty').value, 10);
-      if (isNaN(qty) || qty <= 0) { showResult('⚠️ Enter a valid quantity.', 'warn'); return; }
-
-      const lot = (product.lots || []).find(l => l.expiry === lotExpiry && !l.ordered);
-      if (!lot) { showResult('⚠️ Lot not found.', 'warn'); return; }
-      if (qty > lot.qty) {
-        showResult(`⚠️ Cannot remove ${qty}. Only ${lot.qty} available.`, 'warn'); return;
-      }
-
-      // Apply removal
-      const originalQty = lot.qty;
-      lot.qty -= qty;
-      if (lot.qty <= 0) product.lots = (product.lots || []).filter(l => !(l.expiry === lotExpiry && !l.ordered));
-      setDirty(true);
-      if (typeof scheduleAutosave === 'function') scheduleAutosave();
-      render();
-
-      // Record in session list
-      removedItems.push({
-        productId: product.id,
-        productName: product.name,
-        qty,
-        expiry: lotExpiry,
-        originalQty,
-        lotRef: lot
-      });
-
-      renderRemoveList();
-      showResult(`✅ Removed <b>${qty}</b> × <b>${escHtml(product.name)}</b><br><small>${lotExpiry === '__unknown__' ? 'Unknown expiry' : formatDateDMY(lotExpiry)}</small>`, 'ok');
-      lastBarcode = null;
-    };
+    if (resultEl) resultEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
-  /* ── Remove session list ── */
+  function doRemove(product, expiry, qty) {
+    if (!qty || qty <= 0) return;
+
+    product.lots = normalizeLots(product.lots || []);
+    const lot = product.lots.find(l => l.expiry === expiry && !l.ordered);
+    if (!lot || lot.qty < qty) {
+      showResult('⚠️ Invalid quantity for selected lot.', 'warn');
+      return;
+    }
+
+    lot.qty -= qty;
+    if (lot.qty <= 0) product.lots = product.lots.filter(l => !(l.expiry === expiry && !l.ordered && l.qty <= 0));
+
+    removedItems.unshift({
+      productId: product.id,
+      productName: product.name,
+      qty,
+      expiry
+    });
+
+    setDirty(true);
+    if (typeof scheduleAutosave === 'function') scheduleAutosave();
+    render();
+    renderRemoveList();
+    showResult(`➖ Removed <b>${qty}</b> × <b>${escHtml(product.name)}</b>`, 'ok');
+  }
+
   function renderRemoveList() {
-    const section = document.getElementById('bcRemoveSection');
-    const list    = document.getElementById('bcRemoveList');
-    if (!section || !list) return;
+    const sec = document.getElementById('bcRemoveSection');
+    const list = document.getElementById('bcRemoveList');
+    if (!sec || !list) return;
 
-    if (removedItems.length === 0) { section.style.display = 'none'; return; }
-    section.style.display = '';
-
+    sec.style.display = (scanMode === 'remove' && removedItems.length) ? '' : 'none';
     list.innerHTML = '';
     removedItems.forEach((item, idx) => {
       const row = document.createElement('div');
@@ -351,7 +559,6 @@
     if (!item) return;
     const product = state.products.find(p => p.id === item.productId);
     if (!product) { removedItems.splice(idx, 1); renderRemoveList(); return; }
-    // Re-add qty to the lot
     product.lots = normalizeLots(product.lots || []);
     let lot = product.lots.find(l => l.expiry === item.expiry && !l.ordered);
     if (lot) { lot.qty += item.qty; }
@@ -385,12 +592,11 @@
     showResult(`✅ Added back <b>${extra}</b> × <b>${escHtml(item.productName)}</b>`, 'ok');
   }
 
-  /* ── Inline qty prompt ── */
   function promptQty(msg) {
     return new Promise(resolve => {
       const overlay = document.getElementById('customModalOverlay');
-      const body    = document.getElementById('customModalBody');
-      const btns    = document.getElementById('customModalBtns');
+      const body = document.getElementById('customModalBody');
+      const btns = document.getElementById('customModalBtns');
       if (!overlay) { resolve(window.prompt(msg, '1')); return; }
       body.innerHTML = `<div style="margin-bottom:10px">${escHtml(msg)}</div><input type="number" id="qtyPromptInput" value="1" min="1" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:16px" />`;
       btns.innerHTML = '';
@@ -404,7 +610,6 @@
     });
   }
 
-  /* ── UI helpers ── */
   function showResult(html, type) {
     const el = document.getElementById('bcResult');
     if (!el) return;
@@ -422,13 +627,10 @@
     return String(s || '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   }
 
-  /* ── Evento pulsanti ── */
   function attachScannerEvents(overlay) {
-    // Close
     document.getElementById('bcClose').onclick = closeScanner;
     overlay.addEventListener('click', e => { if (e.target === overlay) closeScanner(); });
 
-    // Mode tabs
     document.querySelectorAll('.bc-mode-btn').forEach(btn => {
       btn.onclick = () => {
         scanMode = btn.dataset.mode;
@@ -440,19 +642,25 @@
       };
     });
 
-    // Manual input
     const manualInput = document.getElementById('bcManualInput');
-    const manualBtn   = document.getElementById('bcManualBtn');
-    manualBtn.onclick = () => { const v = manualInput.value.trim(); if (v) { lastBarcode = null; handleBarcode(v); } };
+    const manualBtn = document.getElementById('bcManualBtn');
+    manualBtn.onclick = () => {
+      const v = manualInput.value.trim();
+      if (v) { lastBarcode = null; handleBarcode(v); }
+    };
     manualInput.addEventListener('keydown', e => { if (e.key === 'Enter') manualBtn.click(); });
 
-    // Undo all
+    const torchBtn = document.getElementById('bcTorchBtn');
+    if (torchBtn) torchBtn.onclick = toggleTorch;
+
+    const restartBtn = document.getElementById('bcRestartBtn');
+    if (restartBtn) restartBtn.onclick = startCamera;
+
     document.getElementById('bcUndoAll').onclick = () => {
-      [...removedItems].forEach((_, i) => undoRemove(0));
+      [...removedItems].forEach(() => undoRemove(0));
     };
   }
 
-  /* ── Bottoni nella topbar ── */
   function injectTopbarButtons() {
     const sub = document.querySelector('.topbar-sub');
     if (!sub || document.getElementById('btnScanAdd')) return;
@@ -463,17 +671,17 @@
 
     const btnAdd = document.createElement('button');
     btnAdd.className = 'sub-link sub-link-scan'; btnAdd.id = 'btnScanAdd';
-    btnAdd.innerHTML = '📷 Add Product'; btnAdd.title = 'Scan barcode to add a product';
+    btnAdd.innerHTML = '📷 Add Product';
     btnAdd.onclick = () => { if (!isAdmin()) { showAlert('Admin login required.'); return; } openScanner('add'); };
 
     const btnCheck = document.createElement('button');
     btnCheck.className = 'sub-link sub-link-scan'; btnCheck.id = 'btnScanCheck';
-    btnCheck.innerHTML = '📷 Check Stock'; btnCheck.title = 'Scan barcode to check stock';
+    btnCheck.innerHTML = '📷 Check Stock';
     btnCheck.onclick = () => openScanner('check');
 
     const btnRemove = document.createElement('button');
     btnRemove.className = 'sub-link sub-link-scan sub-link-scan-danger'; btnRemove.id = 'btnScanRemove';
-    btnRemove.innerHTML = '📷 Remove Product'; btnRemove.title = 'Scan barcode to remove stock';
+    btnRemove.innerHTML = '📷 Remove Product';
     btnRemove.onclick = () => { if (!isAdmin()) { showAlert('Admin login required.'); return; } openScanner('remove'); };
 
     sub.appendChild(sep);
@@ -484,41 +692,33 @@
     refreshBarcodeButtons();
   }
 
-  /* ── Aggiorna visibilità bottoni in base al ruolo ── */
   function refreshBarcodeButtons() {
-    const sep       = document.getElementById('bcSep');
-    const btnAdd    = document.getElementById('btnScanAdd');
-    const btnCheck  = document.getElementById('btnScanCheck');
+    const sep = document.getElementById('bcSep');
+    const btnAdd = document.getElementById('btnScanAdd');
+    const btnCheck = document.getElementById('btnScanCheck');
     const btnRemove = document.getElementById('btnScanRemove');
-    if (!btnAdd) return; // non ancora iniettati
+    if (!btnAdd) return;
 
-    // Determina ruolo corrente (portalSession è globale in app.js)
-    const loggedIn    = !!(typeof portalSession !== 'undefined' && portalSession?.token);
-    const adminRole   = typeof isAdmin === 'function' && isAdmin();
-    const commRole    = typeof isCommerciale === 'function' && isCommerciale();
+    const loggedIn = !!(typeof portalSession !== 'undefined' && portalSession?.token);
+    const commRole = typeof isCommerciale === 'function' && isCommerciale();
 
     if (!loggedIn) {
-      // Nessun login: tutti i bottoni barcode nascosti
-      if (sep)       sep.style.display       = 'none';
-      if (btnAdd)    btnAdd.style.display    = 'none';
-      if (btnCheck)  btnCheck.style.display  = 'none';
+      if (sep) sep.style.display = 'none';
+      if (btnAdd) btnAdd.style.display = 'none';
+      if (btnCheck) btnCheck.style.display = 'none';
       if (btnRemove) btnRemove.style.display = 'none';
     } else if (commRole) {
-      // Commerciale/Acquisti: solo Check Stock
-      if (sep)       sep.style.display       = '';
-      if (btnAdd)    btnAdd.style.display    = 'none';
-      if (btnCheck)  btnCheck.style.display  = '';
+      if (sep) sep.style.display = '';
+      if (btnAdd) btnAdd.style.display = 'none';
+      if (btnCheck) btnCheck.style.display = '';
       if (btnRemove) btnRemove.style.display = 'none';
     } else {
-      // Admin: tutti visibili
-      if (sep)       sep.style.display       = '';
-      if (btnAdd)    btnAdd.style.display    = '';
-      if (btnCheck)  btnCheck.style.display  = '';
+      if (sep) sep.style.display = '';
+      if (btnAdd) btnAdd.style.display = '';
+      if (btnCheck) btnCheck.style.display = '';
       if (btnRemove) btnRemove.style.display = '';
     }
 
-    // Su mobile la topbar-sub è nascosta di default (solo bottoni scanner la tengono viva).
-    // Se nessun bottone scanner è visibile, nascondi la barra intera su mobile.
     const sub = document.querySelector('.topbar-sub');
     if (sub) {
       const anyVisible = [btnAdd, btnCheck, btnRemove].some(b => b && b.style.display !== 'none');
@@ -526,14 +726,10 @@
     }
   }
 
-  // Esponi la funzione globalmente così refreshAuthUI() in app.js può chiamarla
   window.refreshBarcodeButtons = refreshBarcodeButtons;
 
-  /* ── Init ── */
   document.addEventListener('DOMContentLoaded', () => {
     injectTopbarButtons();
   });
-  // Also try immediately in case DOM is already ready
   if (document.readyState !== 'loading') injectTopbarButtons();
-
 })();

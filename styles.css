@@ -1429,51 +1429,12 @@ input:disabled { background: #f8f9f9; color: #999; cursor: not-allowed; }
   padding: 8px 16px 12px; display: flex; justify-content: flex-end;
 }
 
-.bc-tools-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 4px 16px 8px;
-  flex-wrap: wrap;
-}
-.bc-tool-btn {
-  flex: 0 0 auto;
-  min-width: 150px;
-}
-.bc-tool-btn.is-on {
-  background: #fff4cc;
-  border-color: #f0c14b;
-}
-.bc-tool-btn.is-disabled,
-.bc-tool-btn:disabled {
-  opacity: .65;
-  cursor: not-allowed;
-}
-.bc-scan-hint {
-  flex: 1 1 220px;
-  font-size: 12px;
-  color: var(--muted, #666);
-  line-height: 1.45;
-}
-.bc-status-pill {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(0,0,0,.62);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  backdrop-filter: blur(2px);
-}
 
-@media (max-width: 640px) {
-  .bc-tools-row { padding-top: 10px; }
-  .bc-tool-btn { width: 100%; }
-  .bc-scan-hint { width: 100%; }
-}
+/* ===== Barcode scanner enhancements ===== */
+.bc-camera-tools{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.bc-camera-hint{margin-top:8px;font-size:12px;line-height:1.4;color:var(--text2, #5f6b76)}
+.bc-status{margin-top:8px;padding:9px 12px;border-radius:10px;background:#f6f7f8;border:1px solid #e3e7ea;font-size:13px;color:#1f2937}
+.bc-status-ok{background:#ecfdf5;border-color:#bbf7d0;color:#166534}
+.bc-status-warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+.bc-status-info{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+#bcTorchBtn[disabled]{opacity:.7;cursor:not-allowed}
