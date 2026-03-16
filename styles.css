@@ -1216,3 +1216,186 @@ input:disabled { background: #f8f9f9; color: #999; cursor: not-allowed; }
   font-size: 16px;
   flex-shrink: 0;
 }
+
+/* =====================================================================
+   BARCODE SCANNER MODULE
+   ===================================================================== */
+
+/* Topbar scan buttons */
+.sub-link-scan {
+  background: rgba(46,204,113,.15);
+  color: #27ae60;
+  border: 1px solid rgba(46,204,113,.35);
+  font-weight: 600;
+}
+.sub-link-scan:hover {
+  background: rgba(46,204,113,.28);
+  color: #1e8449;
+}
+.sub-link-scan-danger {
+  background: rgba(231,76,60,.12);
+  color: #c0392b;
+  border-color: rgba(231,76,60,.3);
+}
+.sub-link-scan-danger:hover {
+  background: rgba(231,76,60,.22);
+  color: #a93226;
+}
+
+/* Overlay backdrop */
+#barcodeOverlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(0,0,0,.62);
+  align-items: center; justify-content: center;
+  padding: 12px;
+}
+
+/* Main panel */
+.bc-panel {
+  background: var(--surface, #fff);
+  border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.35);
+  width: 100%; max-width: 520px;
+  max-height: 90vh; overflow-y: auto;
+  display: flex; flex-direction: column;
+  animation: modalIn .18s ease;
+}
+
+.bc-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border, #e0e0e0);
+}
+.bc-title {
+  font-size: 15px; font-weight: 700; color: var(--text, #1a1a2e);
+}
+.bc-close {
+  background: none; border: none; font-size: 18px; cursor: pointer;
+  color: var(--text2, #777); padding: 4px 8px; border-radius: 6px;
+  line-height: 1;
+}
+.bc-close:hover { background: var(--surface2, #f0f0f0); }
+
+/* Mode buttons */
+.bc-modes {
+  display: flex; gap: 6px; padding: 12px 16px 8px;
+  flex-wrap: wrap;
+}
+.bc-mode-btn {
+  flex: 1; padding: 8px 10px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border, #ddd); border-radius: 8px;
+  background: var(--surface2, #f5f5f5); color: var(--text2, #555);
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.bc-mode-btn:hover { background: var(--surface3, #eee); }
+.bc-mode-btn.active {
+  background: var(--accent, #2979ff); color: #fff;
+  border-color: var(--accent, #2979ff);
+}
+
+/* Camera */
+.bc-cam-wrap {
+  position: relative; margin: 6px 16px;
+  border-radius: 10px; overflow: hidden;
+  background: #000; aspect-ratio: 4/3;
+  max-height: 240px;
+}
+#bcVideo {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.bc-crosshair {
+  position: absolute; inset: 0; pointer-events: none;
+  border: 2px solid rgba(41,121,255,.7);
+  box-shadow: inset 0 0 0 9999px rgba(0,0,0,.25);
+}
+.bc-crosshair::before, .bc-crosshair::after {
+  content: ''; position: absolute;
+  background: rgba(41,121,255,.9);
+}
+.bc-crosshair::before { left: 50%; top: 20%; bottom: 20%; width: 1.5px; transform: translateX(-50%); }
+.bc-crosshair::after  { top: 50%; left: 20%; right: 20%; height: 1.5px; transform: translateY(-50%); }
+
+/* Manual input row */
+.bc-manual-row {
+  display: flex; gap: 8px; padding: 8px 16px;
+}
+.bc-manual-row input {
+  flex: 1; padding: 8px 10px; border: 1px solid var(--border, #ddd);
+  border-radius: 8px; font-size: 14px;
+}
+
+/* Result */
+.bc-result {
+  margin: 4px 16px 8px; padding: 10px 12px;
+  border-radius: 8px; font-size: 13px; line-height: 1.6;
+  min-height: 0; transition: all .15s;
+}
+.bc-result:empty { padding: 0; margin-bottom: 0; }
+.bc-result-ok   { background: #eafaf1; border: 1px solid #a9dfbf; color: #1e8449; }
+.bc-result-warn { background: #fef9e7; border: 1px solid #f9e79f; color: #7d6608; }
+.bc-result-info { background: #eaf4fb; border: 1px solid #aed6f1; color: #1a5276; }
+
+/* Check stock table */
+.bc-check-name {
+  font-weight: 700; font-size: 15px; margin-bottom: 4px;
+}
+.bc-check-total {
+  font-size: 14px; margin-bottom: 8px; font-weight: 600; color: #27ae60;
+}
+.bc-check-total.stock-zero { color: #c0392b; }
+.bc-check-total.stock-low  { color: #e67e22; }
+.bc-lot-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.bc-lot-table th, .bc-lot-table td {
+  padding: 5px 8px; text-align: left;
+  border-bottom: 1px solid rgba(0,0,0,.08);
+}
+.bc-lot-table th { font-weight: 700; color: var(--text2, #666); }
+.bc-st-badge {
+  display: inline-block; padding: 2px 6px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; letter-spacing: .5px;
+}
+.bc-st-ok       { background: #d5f5e3; color: #1e8449; }
+.bc-st-risky    { background: #fdebd0; color: #d35400; }
+.bc-st-expiring { background: #fef9e7; color: #9a7d0a; }
+.bc-st-expired  { background: #fadbd8; color: #922b21; }
+.bc-st-unknown  { background: #eaf2ff; color: #2471a3; }
+
+/* Remove form */
+.bc-remove-form {
+  display: flex; flex-direction: column; gap: 8px; margin-top: 6px;
+}
+.bc-remove-label {
+  font-size: 12px; font-weight: 600; color: var(--text2, #666);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.bc-select, .bc-number-input {
+  padding: 7px 9px; border: 1px solid var(--border, #ddd);
+  border-radius: 7px; font-size: 13px; width: 100%;
+}
+.bc-remove-btns {
+  display: flex; gap: 8px; margin-top: 4px;
+}
+
+/* Remove session list */
+.bc-remove-title {
+  font-size: 12px; font-weight: 700; color: var(--text2, #666);
+  padding: 8px 16px 4px; border-top: 1px solid var(--border, #eee);
+  margin-top: 4px;
+}
+.bc-remove-list {
+  padding: 0 16px; display: flex; flex-direction: column; gap: 6px;
+}
+.bc-removed-row {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface2, #f8f8f8); border: 1px solid var(--border, #ddd);
+  border-radius: 8px; padding: 8px 10px; gap: 8px;
+}
+.bc-removed-info { flex: 1; font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+.bc-removed-meta { font-size: 11px; color: var(--text2, #888); }
+.bc-removed-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.bc-remove-actions {
+  padding: 8px 16px 12px; display: flex; justify-content: flex-end;
+}
