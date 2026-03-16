@@ -1345,24 +1345,6 @@ input:disabled { background: #f8f9f9; color: #999; cursor: not-allowed; }
 .bc-crosshair::before { left: 50%; top: 20%; bottom: 20%; width: 1.5px; transform: translateX(-50%); }
 .bc-crosshair::after  { top: 50%; left: 20%; right: 20%; height: 1.5px; transform: translateY(-50%); }
 
-/* Camera tools */
-.bc-tools-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 16px 2px;
-  flex-wrap: wrap;
-}
-.bc-tool-btn {
-  min-width: 108px;
-}
-.bc-tool-btn.is-on {
-  background: #fff3cd;
-  border-color: #f1c40f;
-}
-.bc-scan-hint {
-  font-size: 12px;
-  color: var(--muted);
-}
-
 /* Manual input row */
 .bc-manual-row {
   display: flex; gap: 8px; padding: 8px 16px;
@@ -1447,49 +1429,50 @@ input:disabled { background: #f8f9f9; color: #999; cursor: not-allowed; }
   padding: 8px 16px 12px; display: flex; justify-content: flex-end;
 }
 
-
-/* Barcode scanner improvements */
 .bc-tools-row {
   display: flex;
-  align-items: center;
   gap: 8px;
-  padding: 8px 16px 4px;
+  align-items: center;
+  padding: 4px 16px 8px;
   flex-wrap: wrap;
 }
 .bc-tool-btn {
-  min-width: 132px;
+  flex: 0 0 auto;
+  min-width: 150px;
 }
 .bc-tool-btn.is-on {
   background: #fff4cc;
-  border-color: #f1c40f;
-  color: #7d6608;
+  border-color: #f0c14b;
+}
+.bc-tool-btn.is-disabled,
+.bc-tool-btn:disabled {
+  opacity: .65;
+  cursor: not-allowed;
 }
 .bc-scan-hint {
+  flex: 1 1 220px;
   font-size: 12px;
-  color: var(--text2, #666);
-  flex: 1;
+  color: var(--muted, #666);
+  line-height: 1.45;
 }
 .bc-status-pill {
   position: absolute;
   left: 10px;
+  right: 10px;
   bottom: 10px;
-  z-index: 3;
-  background: rgba(0,0,0,.68);
-  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 6px 10px;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  backdrop-filter: blur(4px);
+  background: rgba(0,0,0,.62);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  backdrop-filter: blur(2px);
 }
-.bc-crosshair {
-  inset: 16% 10%;
-  border-radius: 10px;
-}
-.bc-crosshair::before { top: 12%; bottom: 12%; }
-.bc-crosshair::after  { left: 10%; right: 10%; }
+
 @media (max-width: 640px) {
-  .bc-cam-wrap { max-height: 300px; }
   .bc-tools-row { padding-top: 10px; }
   .bc-tool-btn { width: 100%; }
   .bc-scan-hint { width: 100%; }
