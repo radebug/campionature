@@ -1128,7 +1128,27 @@ input:disabled { background: #f8f9f9; color: #999; cursor: not-allowed; }
 }
 
 @media (max-width: 640px) {
-  .topbar-sub { display: none; }
+  /* Mostra la topbar-sub solo per i bottoni scanner, nascondi il resto */
+  .topbar-sub .sub-link-dark,
+  .topbar-sub #fileNote,
+  .topbar-sub #btnOpenFolder,
+  .topbar-sub #folderStatus,
+  .topbar-sub #btnLoad,
+  .topbar-sub #importExcelPicker { display: none !important; }
+  /* Nascondi la barra se nessun bottone scanner è attivo */
+  .topbar-sub[data-scanner-visible="0"] { display: none; }
+  /* Layout compatto per la barra scanner */
+  .topbar-sub {
+    padding: 6px 10px;
+    gap: 6px;
+    flex-wrap: nowrap;
+    justify-content: center;
+    min-height: 0;
+  }
+  .sub-link-scan {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
   .search-bar { flex-basis: 100%; max-width: 100%; order: 3; }
   #productGrid { grid-template-columns: 1fr 1fr; gap: 8px; }
   .thumb { min-height: 120px; }
