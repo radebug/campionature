@@ -140,9 +140,9 @@
             <span>Date</span>
             <input type="text" id="cartShipDate" placeholder="DD/MM/YYYY" inputmode="numeric">
           </label>
-          <label class="row cartCheckRow">
-            <span>Options</span>
-            <label class="checkItem"><input type="checkbox" id="cartExtraUE"> Extra UE / DHL</label>
+          <label class="row">
+            <span>N° campionatura</span>
+            <input type="number" id="cartCampionatura" placeholder="Opzionale" min="1" step="1" inputmode="numeric">
           </label>
         </div>
         <div class="grid2">
@@ -350,7 +350,7 @@
         <table class="shipTable">
           <thead>
             <tr>
-              <th>Date</th><th>Items</th><th>Destination</th><th>Recipient</th><th>Reference</th><th>Notes</th><th>DHL</th><th>Actions</th>
+              <th>Date</th><th>Items</th><th>Destination</th><th>Recipient</th><th>Reference</th><th>Notes</th><th>ID Campionatura</th><th>Actions</th>
             </tr>
           </thead>
           <tbody id="shipHistBody"></tbody>

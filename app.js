@@ -133,7 +133,8 @@ const els = {
   cartRecipient: $("#cartRecipient"),
   cartReference: $("#cartReference"),
   cartNotes: $("#cartNotes"),
-  cartExtraUE: $("#cartExtraUE"),
+  cartExtraUE: null, // removed — kept for compat
+  cartCampionatura: $("#cartCampionatura"),
   btnCreateShipment: $("#btnCreateShipment"),
   btnCartPdf: $("#btnCartPdf"),
   btnCartExcel: $("#btnCartExcel"),
@@ -179,8 +180,7 @@ function isCommerciale() { return portalSession?.role === "commerciale"; }
 
 /* ---- Local accounts (no Supabase needed) ---- */
 const LOCAL_ACCOUNTS = {
-  "commerciale": { password: "Balconi1", role: "commerciale" },
-  "acquisti":    { password: "Trancetto1", role: "commerciale" }
+  "commerciale": { password: "Balconi1", role: "commerciale" }
 };
 
 /* ---- EmailJS config (per invio automatico) ---- */
@@ -255,8 +255,6 @@ function refreshAuthUI() {
   if (btnCommRequests) btnCommRequests.style.display = isAdmin() ? '' : 'none';
   // Commerciale: hide/show cart form elements accordingly
   updateCartUIForRole();
-  // Barcode buttons: update visibility based on login state
-  if (typeof refreshBarcodeButtons === 'function') refreshBarcodeButtons();
 }
 
 async function initSupabase() {
@@ -1702,7 +1700,21 @@ function cartItemRequestedUnits(item) {
 function buildLotOptionsHtml(p, selectedExpiry) {
   const lots = sortedRealLotsForShipping(p).filter(l => l.qty > 0);
   return lots.map(l => {
-    const label = `${formatDateDMY(l.expiry)} — ${l.qty} units${p.ctSize ? ` (${Math.floor(l.qty / p.ctSize)} CT max)` : ''}`;
+    // Show MM/YY date format (shorter) to avoid truncation in narrow select
+    let dateLabel;
+    if (l.expiry === '__unknown__') {
+      dateLabel = 'N/D';
+    } else {
+      // Try to extract MM/YY from ISO date YYYY-MM-DD
+      const parts = (l.expiry || '').split('-');
+      if (parts.length >= 2) {
+        const yy = parts[0].slice(-2);
+        dateLabel = `${parts[1]}/${yy}`;
+      } else {
+        dateLabel = formatDateDMY(l.expiry);
+      }
+    }
+    const label = `${dateLabel} — ${l.qty}u${p.ctSize ? ` (${Math.floor(l.qty / p.ctSize)}CT)` : ''}`;
     const sel = getLotKey(l.expiry) === getLotKey(selectedExpiry) ? 'selected' : '';
     return `<option value="${escapeHtml(getLotKey(l.expiry))}" ${sel}>${escapeHtml(label)}</option>`;
   }).join('');
@@ -1842,7 +1854,8 @@ function buildShipmentDraftFromCart(requireValidation = true) {
   const recipient = (els.cartRecipient?.value || '').trim();
   const reference = (els.cartReference?.value || '').trim();
   const notes = (els.cartNotes?.value || '').trim();
-  const extraUE = !!els.cartExtraUE?.checked;
+  const campionatura = (els.cartCampionatura?.value || '').trim().replace(/\D/g, '') || '';
+  const extraUE = false; // removed field — kept for data compat
   const items = []; const errors = [];
   for (const item of shipmentCart) {
     const p = state.products.find(x => x.id === item.productId); if (!p) continue;
@@ -1869,7 +1882,7 @@ function buildShipmentDraftFromCart(requireValidation = true) {
       customsCode: p.customsCode || "", unitWeightKg: Number(p.unitWeightKg || 0) || 0
     });
   }
-  return { id: formatShipmentFileName(dateISO), date: dateISO, destination, recipient, reference, notes, extraUE, createdAt: new Date().toISOString(), items, errors };
+  return { id: formatShipmentFileName(dateISO, campionatura), date: dateISO, destination, recipient, reference, notes, campionatura, extraUE: false, createdAt: new Date().toISOString(), items, errors };
 }
 
 function getNextShipmentNumber() {
@@ -1880,14 +1893,16 @@ function getNextShipmentNumber() {
   return todayShipments.length + 1;
 }
 
-function formatShipmentFileName(dateISO) {
-  // Format: GGMMAA-N (e.g. 100326-1)
+function formatShipmentFileName(dateISO, campionatura) {
+  // Format: GGMMAA-N[-campionatura] (e.g. 100326-1 or 100326-1-42)
   const d = new Date(dateISO + 'T00:00:00');
   const dd = String(d.getDate()).padStart(2,'0');
   const mm = String(d.getMonth()+1).padStart(2,'0');
   const yy = String(d.getFullYear()).slice(-2);
   const n = getNextShipmentNumber();
-  return `${dd}${mm}${yy}-${n}`;
+  const base = `${dd}${mm}${yy}-${n}`;
+  const camp = campionatura ? `-${campionatura}` : '';
+  return `${base}${camp}`;
 }
 
 
@@ -1910,10 +1925,9 @@ async function createShipmentFromCart() {
     const p = state.products.find(x => x.id === item.productId); if (!p) continue;
     if (!withdrawFromSpecificLot(p, item.lotExpiry, item.unitsQty)) { await showAlert(`Could not withdraw stock for ${item.productName}.`); return; }
   }
-  state.shipments.unshift({ id: draft.id, date: draft.date, destination: draft.destination, recipient: draft.recipient, reference: draft.reference, notes: draft.notes, extraUE: draft.extraUE, createdAt: draft.createdAt, items: draft.items });
+  state.shipments.unshift({ id: draft.id, date: draft.date, destination: draft.destination, recipient: draft.recipient, reference: draft.reference, notes: draft.notes, campionatura: draft.campionatura || '', extraUE: false, createdAt: draft.createdAt, items: draft.items });
   setDirty(true);
   exportShipmentDraftPDF(draft);
-  if (draft.extraUE) exportDHLList(draft);
   shipmentCart = []; render(); renderShipmentHistory();
 }
 
@@ -1924,7 +1938,7 @@ function normalizeShipmentRecords(rows) {
     const items = Array.isArray(s.items) && s.items.length
       ? s.items.map(it => ({ productId: it.productId || s.productId || "", productName: it.productName || s.productName || "", lotExpiry: it.lotExpiry || "__unknown__", unitMode: it.unitMode === "ct" ? "ct" : "units", qty: Math.max(1, Math.trunc(Number(it.qty) || Number(s.qty) || 1)), unitsQty: Math.max(1, Math.trunc(Number(it.unitsQty) || Number(it.qty) || Number(s.qty) || 1)) }))
       : [{ productId: s.productId || "", productName: s.productName || "", lotExpiry: s.lotExpiry || "__unknown__", unitMode: s.unitMode === "ct" ? "ct" : "units", qty: Math.max(1, Math.trunc(Number(s.qty) || 1)), unitsQty: Math.max(1, Math.trunc(Number(s.unitsQty) || Number(s.qty) || 1)) }];
-    return { id: s.id || uid("ship"), date: s.date || todayISO(), destination: s.destination || "", recipient: s.recipient || "", reference: s.reference || "", notes: s.notes || "", extraUE: !!s.extraUE, createdAt: s.createdAt || new Date().toISOString(), items };
+    return { id: s.id || uid("ship"), date: s.date || todayISO(), destination: s.destination || "", recipient: s.recipient || "", reference: s.reference || "", notes: s.notes || "", campionatura: s.campionatura || "", extraUE: !!s.extraUE, createdAt: s.createdAt || new Date().toISOString(), items };
   });
 }
 
@@ -1941,7 +1955,7 @@ function filteredShipments() {
   const arr = normalizeShipmentRecords(state?.shipments);
   arr.sort((a,b) => `${b.date}|${b.createdAt || ''}`.localeCompare(`${a.date}|${a.createdAt || ''}`));
   if (!q) return arr;
-  return arr.filter(s => [shipmentItemsText(s), s.destination, s.recipient, s.reference, s.notes, s.extraUE ? 'dhl extra ue' : ''].join(' ').toLowerCase().includes(q));
+  return arr.filter(s => [shipmentItemsText(s), s.destination, s.recipient, s.reference, s.notes, s.id, s.campionatura || ''].join(' ').toLowerCase().includes(q));
 }
 
 function renderShipmentHistory() {
@@ -1963,19 +1977,25 @@ function renderShipmentHistory() {
         <td>${escapeHtml(s.recipient || '')}</td>
         <td>${escapeHtml(s.reference || '')}</td>
         <td>${escapeHtml(s.notes || '')}</td>
-        <td>${s.extraUE ? '✅ Yes' : 'No'}</td>
+        <td><span style="font-family:monospace;font-size:12px">${escapeHtml(s.id || '')}</span></td>
         <td class="shipDel">
           <div class="shipRowActions">
             <button class="btn small ghost" type="button" data-act="pdf">📄 PDF</button>
             <button class="btn small ghost" type="button" data-act="edit">✏ Edit</button>
-            ${s.extraUE ? '<button class="btn small ghost" type="button" data-act="dhl">🚚 DHL</button>' : ''}
             ${isAdmin() ? '<button class="btn small ghost danger" type="button" data-act="del">🗑 Del</button>' : ''}
           </div>
         </td>`;
       tr.querySelector('[data-act="pdf"]')?.addEventListener('click', () => exportShipmentFromHistory(s.id, 'pdf'));
-      tr.querySelector('[data-act="edit"]')?.addEventListener('click', () => editShipment(s.id));
-      tr.querySelector('[data-act="dhl"]')?.addEventListener('click', () => exportShipmentFromHistory(s.id, 'dhl'));
-      tr.querySelector('[data-act="del"]')?.addEventListener('click', () => deleteShipment(s.id));
+      tr.querySelector('[data-act="edit"]')?.addEventListener('click', async () => {
+        els.shipHistDlg?.close();
+        await new Promise(r => setTimeout(r, 80));
+        editShipment(s.id);
+      });
+      tr.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
+        els.shipHistDlg?.close();
+        await new Promise(r => setTimeout(r, 80));
+        deleteShipment(s.id);
+      });
       els.shipHistBody.appendChild(tr);
     }
   }
@@ -2276,7 +2296,7 @@ function loadShipmentIntoCart(shipment) {
   if (els.cartRecipient) els.cartRecipient.value = shipment?.recipient || '';
   if (els.cartReference) els.cartReference.value = shipment?.reference || '';
   if (els.cartNotes) els.cartNotes.value = shipment?.notes || '';
-  if (els.cartExtraUE) els.cartExtraUE.checked = !!shipment?.extraUE;
+  if (els.cartCampionatura) els.cartCampionatura.value = shipment?.campionatura || '';
   renderShipmentCart();
 }
 
@@ -2409,7 +2429,7 @@ async function exportCatalogueExcel() {
   const lots = [];
   for (const p of (state.products || [])) for (const l of normalizeLots(p.lots || [])) lots.push({ Product: p.name, Expiry: l.expiry === '__unknown__' ? 'Unknown' : l.expiry, Qty: l.qty, Ordered: l.ordered ? 'Yes' : 'No', Status: l.ordered ? 'Ordered' : lotStatus(l.expiry) });
   const shipments = [];
-  for (const s of normalizeShipmentRecords(state.shipments)) for (const it of s.items) shipments.push({ Date: s.date, ShipmentID: s.id, Product: it.productName, Lot: it.lotExpiry === '__unknown__' ? 'Unknown' : it.lotExpiry, Mode: it.unitMode, Qty: it.qty, UnitsQty: it.unitsQty, Destination: s.destination, Recipient: s.recipient, Reference: s.reference, Notes: s.notes, ExtraUE: s.extraUE ? 'Yes' : 'No' });
+  for (const s of normalizeShipmentRecords(state.shipments)) for (const it of s.items) shipments.push({ Date: s.date, ShipmentID: s.id, Product: it.productName, Lot: it.lotExpiry === '__unknown__' ? 'Unknown' : it.lotExpiry, Mode: it.unitMode, Qty: it.qty, UnitsQty: it.unitsQty, Destination: s.destination, Recipient: s.recipient, Reference: s.reference, Notes: s.notes, Campionatura: s.campionatura || '' });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(products.length ? products : [{Info:'No products'}]), 'Products');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lots.length ? lots : [{Info:'No lots'}]), 'Lots');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shipments.length ? shipments : [{Info:'No shipments'}]), 'Shipments');
@@ -2420,7 +2440,7 @@ async function exportShipmentDraftExcel(draft) {
   if (!draft || !draft.items?.length) { await showAlert("Cart is empty."); return; }
   if (typeof XLSX === 'undefined') { await showAlert('Excel library not loaded.'); return; }
   const wb = XLSX.utils.book_new();
-  const rows = draft.items.map(it => ({ ShipmentID: draft.id, Date: draft.date, Product: it.productName, Lot: it.lotExpiry === '__unknown__' ? 'Unknown' : it.lotExpiry, Mode: it.unitMode, Qty: it.qty, UnitsQty: it.unitsQty, Destination: draft.destination, Recipient: draft.recipient, Reference: draft.reference, Notes: draft.notes, ExtraUE: draft.extraUE ? 'Yes' : 'No' }));
+  const rows = draft.items.map(it => ({ ShipmentID: draft.id, Date: draft.date, Product: it.productName, Lot: it.lotExpiry === '__unknown__' ? 'Unknown' : it.lotExpiry, Mode: it.unitMode, Qty: it.qty, UnitsQty: it.unitsQty, Destination: draft.destination, Recipient: draft.recipient, Reference: draft.reference, Notes: draft.notes, Campionatura: draft.campionatura || '' }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Shipment');
   XLSX.writeFile(wb, `${draft.id}.xlsx`);
 }
@@ -2448,11 +2468,11 @@ async function exportShipmentDraftPDF(draft) {
   doc.setDrawColor(200, 200, 200); doc.line(14, y, 196, y); y += 5;
   doc.setFontSize(10); doc.setFont(undefined, 'normal');
   const details = [
-    ['Destinazione',   draft.destination || '—'],
-    ['Destinatario',   draft.recipient   || '—'],
-    ['Riferimento',    draft.reference   || '—'],
-    ['Note',           draft.notes       || '—'],
-    ['Extra UE / DHL', draft.extraUE ? 'Sì' : 'No'],
+    ['Destinazione',    draft.destination || '—'],
+    ['Destinatario',    draft.recipient   || '—'],
+    ['Riferimento',     draft.reference   || '—'],
+    ['Note',            draft.notes       || '—'],
+    ['N° campionatura', draft.campionatura || '—'],
   ];
   for (const [label, val] of details) {
     doc.setFont(undefined, 'bold'); doc.text(`${label}:`, 14, y);
