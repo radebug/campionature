@@ -255,6 +255,8 @@ function refreshAuthUI() {
   if (btnCommRequests) btnCommRequests.style.display = isAdmin() ? '' : 'none';
   // Commerciale: hide/show cart form elements accordingly
   updateCartUIForRole();
+  // Barcode buttons: update visibility based on login state
+  if (typeof refreshBarcodeButtons === 'function') refreshBarcodeButtons();
 }
 
 async function initSupabase() {

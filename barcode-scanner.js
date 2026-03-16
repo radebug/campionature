@@ -481,7 +481,10 @@
     sub.appendChild(btnCheck);
     sub.appendChild(btnRemove);
 
-    refreshBarcodeButtons();
+    // Defer visibility update: portalSession might not be loaded yet at inject time.
+    // refreshAuthUI() in app.js will call refreshBarcodeButtons() once session is ready.
+    // We use a short timeout as fallback in case refreshAuthUI already ran before inject.
+    setTimeout(refreshBarcodeButtons, 200);
   }
 
   /* ── Aggiorna visibilità bottoni in base al ruolo ── */
@@ -492,10 +495,18 @@
     const btnRemove = document.getElementById('btnScanRemove');
     if (!btnAdd) return; // non ancora iniettati
 
-    // Determina ruolo corrente (portalSession è globale in app.js)
-    const loggedIn    = !!(typeof portalSession !== 'undefined' && portalSession?.token);
-    const adminRole   = typeof isAdmin === 'function' && isAdmin();
-    const commRole    = typeof isCommerciale === 'function' && isCommerciale();
+    // Legge portalSession dal localStorage come fallback se la variabile globale non è ancora pronta
+    let session = (typeof portalSession !== 'undefined') ? portalSession : null;
+    if (!session) {
+      try {
+        const raw = localStorage.getItem('portal_session_v1');
+        if (raw) session = JSON.parse(raw);
+      } catch { session = null; }
+    }
+
+    const loggedIn = !!(session?.token);
+    const role     = session?.role || '';
+    const commRole = (role === 'commerciale');
 
     if (!loggedIn) {
       // Nessun login: tutti i bottoni barcode nascosti
