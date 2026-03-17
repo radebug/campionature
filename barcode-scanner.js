@@ -46,11 +46,12 @@
 
         <div class="bc-camera-tools">
           <button class="btn ghost small" id="bcTorchBtn" type="button">🔦 Flash non disponibile</button>
+          <button class="btn ghost small" id="bcEnhanceBtn" type="button">🎚 Contrasto auto: ON</button>
           <button class="btn ghost small" id="bcRestartBtn" type="button">↻ Riavvia camera</button>
         </div>
         <div class="bc-camera-hint" id="bcCameraHint">
           Prova a inquadrare il codice da vicino. Questo scanner legge anche <b>ITF-14 / GTIN-14</b>,
-          <b>EAN</b>, <b>UPC</b>, <b>QR</b> e <b>CODE128 / GS1-128</b>.
+          <b>EAN</b>, <b>UPC</b>, <b>QR</b>, <b>CODE128 / GS1-128</b> e usa anche <b>OCR</b> come fallback.
         </div>
         <div class="bc-status" id="bcStatus">Avvio fotocamera…</div>
 
@@ -83,7 +84,13 @@
   let torchAvailable = false;
   let torchEnabled = false;
   let nativeScanLoop = null;
+  let ocrLoop = null;
   let pauseUntil = 0;
+  let enhanceMode = true;
+  let ocrBusy = false;
+  let ocrAttemptCounter = 0;
+  let nativeMissCounter = 0;
+  let barcodeMissCounter = 0;
 
   function openScanner(mode) {
     buildScannerUI();
@@ -146,8 +153,33 @@
     return window.ZXingBrowser;
   }
 
+
+  async function loadTesseract() {
+    if (window.Tesseract) return window.Tesseract;
+    await new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-tesseract="1"]');
+      if (existing) {
+        existing.addEventListener('load', resolve, { once: true });
+        existing.addEventListener('error', reject, { once: true });
+        return;
+      }
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      s.async = true;
+      s.dataset.tesseract = '1';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Impossibile caricare Tesseract dal CDN'));
+      document.head.appendChild(s);
+    });
+    return window.Tesseract;
+  }
+
   async function startCamera() {
     stopCamera();
+    nativeMissCounter = 0;
+    barcodeMissCounter = 0;
+    ocrAttemptCounter = 0;
+    ocrBusy = false;
     const video = document.getElementById('bcVideo');
     if (!video) return;
 
@@ -173,14 +205,16 @@
       try {
         await startZXingScanner();
         startedWithZXing = true;
-        setStatus('Scanner attivo. Supporto: EAN / UPC / QR / CODE128 / ITF-14 / GS1-128', 'ok');
+        startOCRLoop();
+        setStatus('Scanner attivo. Supporto: EAN / UPC / QR / CODE128 / ITF-14 / GS1-128 + OCR fallback', 'ok');
       } catch (err) {
         console.warn('ZXing non disponibile, fallback BarcodeDetector:', err);
       }
 
       if (!startedWithZXing) {
         startNativeScanLoop();
-        setStatus('Scanner attivo in modalità fallback. EAN / UPC / QR / CODE128', 'warn');
+        startOCRLoop();
+        setStatus('Scanner attivo in modalità fallback. EAN / UPC / QR / CODE128 + OCR', 'warn');
       }
     } catch (e) {
       setStatus('⚠️ Fotocamera non disponibile: ' + escHtml(e.message || 'errore sconosciuto'), 'warn');
@@ -300,13 +334,14 @@
     if (!ctx) return;
 
     const attempts = [
-      { sx: 0, sy: 0, sw: video.videoWidth, sh: video.videoHeight, filter: 'none' },
-      { sx: video.videoWidth * 0.1, sy: video.videoHeight * 0.15, sw: video.videoWidth * 0.8, sh: video.videoHeight * 0.7, filter: 'contrast(1.6) saturate(0.7) brightness(1.08)' },
-      { sx: video.videoWidth * 0.2, sy: video.videoHeight * 0.25, sw: video.videoWidth * 0.6, sh: video.videoHeight * 0.5, filter: 'grayscale(1) contrast(2.2) brightness(1.15)' }
+      { sx: 0, sy: 0, sw: video.videoWidth, sh: video.videoHeight, filter: enhanceMode ? 'contrast(1.25) brightness(1.08) saturate(0.92)' : 'none' },
+      { sx: video.videoWidth * 0.08, sy: video.videoHeight * 0.12, sw: video.videoWidth * 0.84, sh: video.videoHeight * 0.76, filter: 'contrast(1.7) saturate(0.65) brightness(1.12)' },
+      { sx: video.videoWidth * 0.15, sy: video.videoHeight * 0.2, sw: video.videoWidth * 0.7, sh: video.videoHeight * 0.6, filter: 'grayscale(1) contrast(2.35) brightness(1.18)' },
+      { sx: video.videoWidth * 0.05, sy: video.videoHeight * 0.52, sw: video.videoWidth * 0.9, sh: video.videoHeight * 0.34, filter: 'grayscale(1) contrast(2.8) brightness(1.25)' }
     ];
 
     const detector = new BarcodeDetector({
-      formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code', 'data_matrix']
+      formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code', 'data_matrix', 'itf']
     });
 
     for (const a of attempts) {
@@ -318,15 +353,148 @@
       try {
         const codes = await detector.detect(canvas);
         if (codes?.length) {
+          nativeMissCounter = 0;
+          barcodeMissCounter = 0;
           onDetectedCode(codes[0].rawValue);
           return;
         }
       } catch (_) {}
     }
+
+    nativeMissCounter += 1;
+    barcodeMissCounter += 1;
+  }
+
+
+  function startOCRLoop() {
+    if (ocrLoop) clearInterval(ocrLoop);
+    ocrLoop = setInterval(() => {
+      if (Date.now() < pauseUntil) return;
+      if (ocrBusy) return;
+      if (barcodeMissCounter < 6 && nativeMissCounter < 4) return;
+      runOCRFallback();
+    }, 900);
+  }
+
+  function enhanceCanvasForBarcode(ctx, width, height) {
+    const img = ctx.getImageData(0, 0, width, height);
+    const data = img.data;
+    let minL = 255, maxL = 0;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const lum = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      if (lum < minL) minL = lum;
+      if (lum > maxL) maxL = lum;
+    }
+
+    const range = Math.max(25, maxL - minL);
+    const gain = 255 / range;
+    const threshold = Math.max(70, Math.min(205, minL + range * 0.58));
+
+    for (let i = 0; i < data.length; i += 4) {
+      let lum = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      lum = (lum - minL) * gain;
+      lum = lum < threshold ? 0 : 255;
+      data[i] = data[i + 1] = data[i + 2] = lum;
+    }
+
+    ctx.putImageData(img, 0, 0);
+  }
+
+  function extractLikelyBarcodeFromText(text) {
+    const normalized = String(text || '')
+      .replace(/[Oo]/g, '0')
+      .replace(/[Il|]/g, '1')
+      .replace(/[Ss]/g, '5')
+      .replace(/[^0-9\s]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) return '';
+
+    const parts = normalized.split(' ').map(v => v.trim()).filter(Boolean);
+    const joined = normalized.replace(/\s+/g, '');
+
+    const candidates = [];
+    for (const p of parts) {
+      if (/^\d{8,14}$/.test(p)) candidates.push(p);
+    }
+    if (/^\d{8,14}$/.test(joined)) candidates.push(joined);
+
+    const deduped = [...new Set(candidates)].sort((a, b) => b.length - a.length);
+    return deduped[0] || '';
+  }
+
+  async function runOCRFallback() {
+    const video = document.getElementById('bcVideo');
+    const canvas = document.getElementById('bcCanvas');
+    if (!video || !canvas || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+
+    ocrBusy = true;
+    ocrAttemptCounter += 1;
+
+    try {
+      const Tesseract = await loadTesseract();
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return;
+
+      const attempts = [
+        { sx: width * 0.03, sy: height * 0.50, sw: width * 0.94, sh: height * 0.32, scale: 2.2, label: 'bottom' },
+        { sx: width * 0.10, sy: height * 0.58, sw: width * 0.80, sh: height * 0.22, scale: 2.8, label: 'digits' },
+        { sx: width * 0.12, sy: height * 0.44, sw: width * 0.76, sh: height * 0.30, scale: 2.4, label: 'center-bottom' }
+      ];
+
+      setStatus('Ricerca OCR in corso… aumento contrasto per sfondi scuri/cartone.', 'info');
+
+      for (const a of attempts) {
+        const targetW = Math.max(320, Math.round(a.sw * a.scale));
+        const targetH = Math.max(120, Math.round(a.sh * a.scale));
+        canvas.width = targetW;
+        canvas.height = targetH;
+        ctx.save();
+        ctx.clearRect(0, 0, targetW, targetH);
+        ctx.filter = enhanceMode
+          ? 'grayscale(1) contrast(2.6) brightness(1.22) saturate(0)'
+          : 'grayscale(1) contrast(2) brightness(1.12)';
+        ctx.drawImage(video, a.sx, a.sy, a.sw, a.sh, 0, 0, targetW, targetH);
+        ctx.restore();
+        enhanceCanvasForBarcode(ctx, targetW, targetH);
+
+        const result = await Tesseract.recognize(canvas, 'eng', {
+          tessedit_pageseg_mode: 6,
+          tessedit_char_whitelist: '0123456789',
+          preserve_interword_spaces: '1'
+        });
+
+        const text = result?.data?.text || '';
+        const candidate = extractLikelyBarcodeFromText(text);
+        if (candidate) {
+          nativeMissCounter = 0;
+          barcodeMissCounter = 0;
+          onDetectedCode(candidate + '');
+          setStatus('Codice letto via OCR: <b>' + escHtml(candidate) + '</b>', 'ok');
+          return;
+        }
+      }
+
+      if (ocrAttemptCounter % 2 === 0) {
+        setStatus('Barcode non trovato: continuo con OCR + contrasto avanzato.', 'warn');
+      }
+    } catch (err) {
+      console.warn('OCR fallback error', err);
+      if (ocrAttemptCounter <= 2) {
+        setStatus('OCR fallback non disponibile su questo dispositivo/browser.', 'warn');
+      }
+    } finally {
+      ocrBusy = false;
+    }
   }
 
   function stopCamera() {
     if (nativeScanLoop) { clearInterval(nativeScanLoop); nativeScanLoop = null; }
+    if (ocrLoop) { clearInterval(ocrLoop); ocrLoop = null; }
 
     try {
       if (zxingControls && typeof zxingControls.stop === 'function') zxingControls.stop();
@@ -358,6 +526,8 @@
 
     lastBarcode = barcode;
     pauseUntil = Date.now() + 1700;
+    nativeMissCounter = 0;
+    barcodeMissCounter = 0;
 
     if (navigator.vibrate) {
       try { navigator.vibrate(120); } catch (_) {}
@@ -638,6 +808,9 @@
         updateModeTitle();
         showResult('', '');
         lastBarcode = null;
+        nativeMissCounter = 0;
+        barcodeMissCounter = 0;
+        setStatus('Scanner pronto. Modalità: ' + escHtml(btn.textContent || scanMode), 'info');
         renderRemoveList();
       };
     });
@@ -646,12 +819,26 @@
     const manualBtn = document.getElementById('bcManualBtn');
     manualBtn.onclick = () => {
       const v = manualInput.value.trim();
-      if (v) { lastBarcode = null; handleBarcode(v); }
+      if (v) { lastBarcode = null; nativeMissCounter = 0; barcodeMissCounter = 0; handleBarcode(v); }
     };
     manualInput.addEventListener('keydown', e => { if (e.key === 'Enter') manualBtn.click(); });
 
     const torchBtn = document.getElementById('bcTorchBtn');
     if (torchBtn) torchBtn.onclick = toggleTorch;
+
+    const enhanceBtn = document.getElementById('bcEnhanceBtn');
+    if (enhanceBtn) {
+      const paintEnhanceBtn = () => {
+        enhanceBtn.textContent = enhanceMode ? '🎚 Contrasto auto: ON' : '🎚 Contrasto auto: OFF';
+        enhanceBtn.classList.toggle('primary', enhanceMode);
+      };
+      paintEnhanceBtn();
+      enhanceBtn.onclick = () => {
+        enhanceMode = !enhanceMode;
+        paintEnhanceBtn();
+        setStatus(enhanceMode ? 'Contrasto automatico attivo.' : 'Contrasto automatico disattivato.', enhanceMode ? 'ok' : 'info');
+      };
+    }
 
     const restartBtn = document.getElementById('bcRestartBtn');
     if (restartBtn) restartBtn.onclick = startCamera;
