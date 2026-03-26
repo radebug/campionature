@@ -102,7 +102,17 @@
     <section class="content">
       <div class="content-header">
         <div id="filterLine" class="filter-breadcrumb">All products</div>
-        <div class="results-count" id="resultsCount"></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div class="results-count" id="resultsCount"></div>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted,#8a96a0);white-space:nowrap;">
+            📅 Scadenza lotto:
+            <select id="lotSortSelect" style="font-size:12px;padding:2px 6px;border-radius:6px;border:1px solid var(--border,#2e3a47);background:var(--surface,#1a2330);color:inherit;cursor:pointer;">
+              <option value="none">— nessun ordine —</option>
+              <option value="asc">↑ Prima le più vicine</option>
+              <option value="desc">↓ Prima le più lontane</option>
+            </select>
+          </label>
+        </div>
       </div>
       <div id="productGrid" class="productGrid"></div>
       <div id="empty" class="empty" hidden>No products found.</div>

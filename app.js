@@ -180,7 +180,8 @@ function isCommerciale() { return portalSession?.role === "commerciale"; }
 
 /* ---- Local accounts (no Supabase needed) ---- */
 const LOCAL_ACCOUNTS = {
-  "commerciale": { password: "Balconi1", role: "commerciale" }
+  "commerciale": { password: "Balconi1", role: "commerciale" },
+  "marketing":   { password: "vittuone1", role: "commerciale" }
 };
 
 /* ---- EmailJS config (per invio automatico) ---- */
@@ -655,6 +656,7 @@ let ui = {
   editingCategoryId: null,
   editingProductId: null,
   stockProductId: null,
+  lotSort: "none", // "none" | "asc" | "desc"
 };
 
 const fs = { folderHandle: null, jsonFileName: "catalogue.json" };
@@ -738,6 +740,9 @@ function wire() {
   });
 
   els.search.addEventListener("input", () => { ui.search = els.search.value.trim(); render(); });
+
+  const lotSortSelect = document.getElementById("lotSortSelect");
+  if (lotSortSelect) lotSortSelect.addEventListener("change", () => { ui.lotSort = lotSortSelect.value; render(); });
 
   els.btnAddCategory.addEventListener("click", () => openCategoryDlg(null));
   els.btnAddProduct.addEventListener("click", () => openProductDlg(null));
@@ -1066,7 +1071,7 @@ function renderProducts() {
 
 function filteredProducts() {
   const q = ui.search.toLowerCase();
-  return state.products
+  let list = state.products
     .filter(p => {
       if (ui.selectedCategoryId === "__all__") return true;
       const t = totalStock(p);
@@ -1096,8 +1101,25 @@ function filteredProducts() {
       if (!q) return true;
       const hay = [p.name, ...(p.wordings || []), ...(p.codes || [])].join(" ").toLowerCase();
       return hay.includes(q);
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    });
+
+  if (ui.lotSort === "none") {
+    list.sort((a, b) => a.name.localeCompare(b.name));
+  } else {
+    // Compute earliest real (non-ordered) lot expiry for each product
+    const nearestExpiry = (p) => {
+      const realLots = normalizeLots(p.lots).filter(l => !l.ordered && l.qty > 0 && l.expiry && l.expiry !== "__unknown__");
+      if (!realLots.length) return ui.lotSort === "asc" ? "9999-12-31" : "0000-01-01";
+      const sorted = realLots.map(l => l.expiry).sort();
+      return ui.lotSort === "asc" ? sorted[0] : sorted[sorted.length - 1];
+    };
+    list.sort((a, b) => {
+      const ea = nearestExpiry(a), eb = nearestExpiry(b);
+      if (ea === eb) return a.name.localeCompare(b.name);
+      return ui.lotSort === "asc" ? ea.localeCompare(eb) : eb.localeCompare(ea);
+    });
+  }
+  return list;
 }
 
 /* MUST stay sync — returns DOM node */ function productCard(p) {
@@ -1149,13 +1171,17 @@ function filteredProducts() {
   }
 
   // Card coloring
-  cardEl.classList.remove("cardLow","cardExpiring","cardExpired","cardRisky","cardOut","cardOrdered");
+  cardEl.classList.remove("cardLow","cardExpiring","cardExpired","cardRisky","cardOut","cardOrdered","cardAllExpired");
   const realLots = (p.lots || []).filter(l => !l.ordered && l.qty > 0);
   const orderedLotsOnly = (p.lots || []).filter(l => l.ordered && l.qty > 0);
   const statusesReal = realLots.map(l => lotStatus(l.expiry));
   const totalReal = realLots.reduce((s, l) => s + l.qty, 0);
   const totalOrdered = orderedLotsOnly.reduce((s, l) => s + l.qty, 0);
   const hasOrdered = totalOrdered > 0;
+
+  // Check if ALL real lots with stock are expired (bordo rosso)
+  const allExpired = totalReal > 0 && statusesReal.length > 0 && statusesReal.every(s => s === "expired");
+  if (allExpired) cardEl.classList.add("cardAllExpired");
 
   if (hasOrdered && totalReal === 0) cardEl.classList.add("cardOrdered");
   else if (totalReal > 0) {
