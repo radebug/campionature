@@ -1224,8 +1224,7 @@ function filteredProducts() {
   node.querySelector('[data-act="edit"]').addEventListener("click", () => openProductDlg(p.id));
 
   if (isCommerciale()) {
-    // Commerciale can only add to cart
-    node.querySelector('[data-act="info"]').style.display = "none";
+    // Commerciale can only add to cart (info button visible)
     node.querySelector('[data-act="stock"]').style.display = "none";
     node.querySelector('[data-act="edit"]').style.display = "none";
     node.querySelector('[data-act="del"]').style.display = "none";
