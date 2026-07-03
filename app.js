@@ -179,7 +179,13 @@ function clearPortalSession() {
 }
 function isAdmin() { return portalSession?.role === "admin"; }
 function isCommerciale() { return portalSession?.role === "commerciale"; }
-function isOmaggiAccount() { return (portalSession?.username || "").toLowerCase() === "omaggi"; }
+function isOmaggiAccount() {
+  const username = (portalSession?.username || "").toLowerCase().trim();
+  const email = (portalSession?.email || "").toLowerCase().trim();
+  // Supabase mostra spesso l'account come email (es. omaggi@campionature.local).
+  // Il pulsante deve quindi essere visibile sia per username "omaggi" sia per email che inizia con "omaggi@".
+  return username === "omaggi" || username.startsWith("omaggi@") || email === "omaggi" || email.startsWith("omaggi@");
+}
 
 /* ---- Local accounts (no Supabase needed) ---- */
 const LOCAL_ACCOUNTS = {
