@@ -492,6 +492,11 @@ body.role-commerciale #comm-send-mode {
   color: var(--blue);
   font-weight: 500;
 }
+.pPosition {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
 
 /* Stock line */
 .stockLine {

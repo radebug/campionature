@@ -58,6 +58,7 @@ const els = {
   btnAddCategory: $("#btnAddCategory"),
   btnShipments: $("#btnShipments"),
   btnExportExcel: $("#btnExportExcel"),
+  btnResetAllStock: $("#btnResetAllStock"),
   catSearch: $("#catSearch"),
   categoryList: $("#categoryList"),
   filterLine: $("#filterLine"),
@@ -74,6 +75,7 @@ const els = {
   prodCtSize: $("#prodCtSize"),
   prodCustomsCode: $("#prodCustomsCode"),
   prodUnitWeightKg: $("#prodUnitWeightKg"),
+  prodPosition: $("#prodPosition"),
   prodCategory: $("#prodCategory"),
   prodCategoriesBox: $("#prodCategoriesBox"),
   prodWordings: $("#prodWordings"),
@@ -177,6 +179,7 @@ function clearPortalSession() {
 }
 function isAdmin() { return portalSession?.role === "admin"; }
 function isCommerciale() { return portalSession?.role === "commerciale"; }
+function isOmaggiAccount() { return (portalSession?.username || "").toLowerCase() === "omaggi"; }
 
 /* ---- Local accounts (no Supabase needed) ---- */
 const LOCAL_ACCOUNTS = {
@@ -251,6 +254,11 @@ function refreshAuthUI() {
   if (els?.btnExportExcel) {
     els.btnExportExcel.disabled = !state;
     els.btnExportExcel.style.display = isCommerciale() ? 'none' : '';
+  }
+  if (els?.btnResetAllStock) {
+    const showReset = !!state && isOmaggiAccount();
+    els.btnResetAllStock.style.display = showReset ? '' : 'none';
+    els.btnResetAllStock.disabled = !showReset;
   }
   const btnCommRequests = document.getElementById('btnCommRequests');
   if (btnCommRequests) btnCommRequests.style.display = isAdmin() ? '' : 'none';
@@ -746,6 +754,7 @@ function wire() {
 
   els.btnAddCategory.addEventListener("click", () => openCategoryDlg(null));
   els.btnAddProduct.addEventListener("click", () => openProductDlg(null));
+  els.btnResetAllStock?.addEventListener("click", resetAllStock);
 
   els.catSearch.addEventListener("input", () => {
     ui.catSearch = els.catSearch.value.toLowerCase();
@@ -773,6 +782,7 @@ function wire() {
     const ctSize = parseInt($("#prodCtSize").value) || null;
     const customsCode = (els.prodCustomsCode?.value || "").trim();
     const unitWeightKg = Number(els.prodUnitWeightKg?.value || 0) || null;
+    const position = (els.prodPosition?.value || "").trim();
     const selectedCategoryIds = Array
       .from(els.prodCategoriesBox.querySelectorAll('input[type="checkbox"]:checked'))
       .map(cb => cb.value);
@@ -784,14 +794,14 @@ function wire() {
     if (ui.editingProductId) {
       const p = state.products.find(x => x.id === ui.editingProductId);
       if (!p) return;
-      p.name = name; p.ctSize = ctSize; p.customsCode = customsCode; p.unitWeightKg = unitWeightKg;
+      p.name = name; p.ctSize = ctSize; p.customsCode = customsCode; p.unitWeightKg = unitWeightKg; p.position = position;
       p.categoryIds = selectedCategoryIds; delete p.categoryId;
       p.wordings = wordings; p.codes = codes; p.notes = notes; p.imageFileName = imageFileName;
       p.discontinued = discontinued;
       p.lots = normalizeLots(p.lots);
     } else {
       state.products.push({
-        id: uid("prod"), name, ctSize, customsCode, unitWeightKg,
+        id: uid("prod"), name, ctSize, customsCode, unitWeightKg, position,
         categoryIds: selectedCategoryIds, wordings, codes, notes, imageFileName, lots: [], discontinued,
       });
     }
@@ -983,6 +993,7 @@ function validateAndNormalize(obj) {
     p.notes = p.notes || "";
     p.customsCode = p.customsCode || inferCustomsCodeForProduct(p, obj.categories);
     p.unitWeightKg = Number(p.unitWeightKg || 0) || "";
+    p.position = p.position || "";
     p.imageFileName = p.imageFileName || "";
     p.ctSize = (p.ctSize !== undefined && p.ctSize !== null && p.ctSize > 0) ? Number(p.ctSize) : null;
     p.lots = normalizeLots(Array.isArray(p.lots) ? p.lots : []);
@@ -1147,7 +1158,14 @@ function filteredProducts() {
     cardEl.classList.add('cardDiscontinued');
   }
   const names = (p.categoryIds || []).map(id => state.categories.find(c => c.id === id)?.name).filter(Boolean);
-  node.querySelector(".pCat").textContent = names.length ? names.join(", ") : "Uncategorized";
+  const pCatEl = node.querySelector(".pCat");
+  pCatEl.textContent = names.length ? names.join(", ") : "Uncategorized";
+  if (p.position) {
+    const pos = document.createElement("div");
+    pos.className = "pPosition";
+    pos.textContent = `📍 Posizione: ${p.position}`;
+    pCatEl.insertAdjacentElement("afterend", pos);
+  }
 
   const total = totalStock(p);
   const stockTotalEl = node.querySelector(".stockTotal");
@@ -1301,6 +1319,7 @@ function openProductDlg(id) {
     $("#prodCtSize").value = p.ctSize || "";
     if (els.prodCustomsCode) els.prodCustomsCode.value = p.customsCode || "";
     if (els.prodUnitWeightKg) els.prodUnitWeightKg.value = p.unitWeightKg || "";
+    if (els.prodPosition) els.prodPosition.value = p.position || "";
     const selectedIds = Array.isArray(p.categoryIds) ? p.categoryIds : (p.categoryId ? [p.categoryId] : []);
     for (const cb of els.prodCategoriesBox.querySelectorAll('input[type="checkbox"]')) cb.checked = selectedIds.includes(cb.value);
     els.prodWordings.value = (p.wordings || []).join("\n"); els.prodCodes.value = (p.codes || []).join("\n");
@@ -1313,6 +1332,7 @@ function openProductDlg(id) {
     els.prodName.value = ""; $("#prodCtSize").value = "";
     if (els.prodCustomsCode) els.prodCustomsCode.value = "";
     if (els.prodUnitWeightKg) els.prodUnitWeightKg.value = "";
+    if (els.prodPosition) els.prodPosition.value = "";
     if (state.categories.some(c => c.id === ui.selectedCategoryId)) {
       const cb = els.prodCategoriesBox.querySelector(`input[value="${ui.selectedCategoryId}"]`);
       if (cb) cb.checked = true;
@@ -1469,7 +1489,8 @@ function openInfoDlg(productId) {
   els.infoTitle.textContent = `${p.name}`;
   const catNames = (Array.isArray(p.categoryIds) ? p.categoryIds : []).map(id => state.categories.find(c => c.id === id)?.name).filter(Boolean);
   let ctInfo = ""; if (p.ctSize && p.ctSize > 0) ctInfo = ` • CT Size: ${p.ctSize} units`;
-  els.infoSub.textContent = `Category: ${catNames.length ? catNames.join(", ") : "Uncategorized"}${ctInfo}`;
+  const posInfo = p.position ? ` • Position: ${p.position}` : "";
+  els.infoSub.textContent = `Category: ${catNames.length ? catNames.join(", ") : "Uncategorized"}${ctInfo}${posInfo}`;
   els.infoWordings.textContent = (p.wordings?.length ? p.wordings.join("\n") : "—");
   els.infoCodes.textContent = (p.codes?.length ? p.codes.join("\n") : "—");
   els.infoLots.innerHTML = "";
@@ -1531,6 +1552,17 @@ function normalizeLots(lots) {
 
 function totalStock(p) { return normalizeLots(p.lots).reduce((s, l) => s + l.qty, 0); }
 
+async function resetAllStock() {
+  if (!isOmaggiAccount()) { await showAlert("Funzione disponibile solo per l\'account omaggi."); return; }
+  if (!state?.products?.length) return;
+  const ok = await showConfirm("Vuoi azzerare lo stock di tutti i prodotti? L’operazione rimuoverà tutti i lotti presenti e ordinati.");
+  if (!ok) return;
+  for (const p of state.products) p.lots = [];
+  setDirty(true);
+  render();
+  await showAlert("Stock di tutti i prodotti resettato ✅");
+}
+
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -1553,7 +1585,7 @@ async function duplicateProductFromDialog() {
   const newProduct = {
     id: uid("prod"), name, categoryIds: selectedCategoryIds,
     wordings: splitLines(els.prodWordings.value), codes: splitLines(els.prodCodes.value),
-    notes: (els.prodNotes?.value || "").trim(), imageFileName: (els.prodImageFileName.value || "").trim(), lots: [],
+    notes: (els.prodNotes?.value || "").trim(), imageFileName: (els.prodImageFileName.value || "").trim(), position: (els.prodPosition?.value || "").trim(), lots: [],
   };
   state.products ||= []; state.products.push(newProduct);
   setDirty(true); ui.editingProductId = null; els.prodDlg.close();
@@ -2380,6 +2412,7 @@ async function importCatalogueFromExcel(file) {
           if (row['CTSize'] !== undefined && row['CTSize'] !== '') p.ctSize = parseInt(row['CTSize']) || null;
           if (row['CustomsCode']) p.customsCode = String(row['CustomsCode']).trim();
           if (row['UnitWeightKg'] !== undefined && row['UnitWeightKg'] !== '') p.unitWeightKg = Number(row['UnitWeightKg']) || '';
+          if (row['Position'] !== undefined) p.position = String(row['Position'] || '').trim();
           if (row['Image']) p.imageFileName = String(row['Image']).trim();
           if (row['Wordings'] !== undefined) p.wordings = row['Wordings'] ? String(row['Wordings']).split('|').map(s=>s.trim()).filter(Boolean) : p.wordings;
           if (row['Codes'] !== undefined) p.codes = row['Codes'] ? String(row['Codes']).split('|').map(s=>s.trim()).filter(Boolean) : p.codes;
@@ -2391,6 +2424,7 @@ async function importCatalogueFromExcel(file) {
             ctSize: parseInt(row['CTSize']) || null,
             customsCode: String(row['CustomsCode'] || '').trim(),
             unitWeightKg: Number(row['UnitWeightKg'] || 0) || '',
+            position: String(row['Position'] || '').trim(),
             imageFileName: String(row['Image'] || '').trim(),
             wordings: row['Wordings'] ? String(row['Wordings']).split('|').map(s=>s.trim()).filter(Boolean) : [],
             codes: row['Codes'] ? String(row['Codes']).split('|').map(s=>s.trim()).filter(Boolean) : [],
@@ -2451,7 +2485,7 @@ async function exportCatalogueExcel() {
   const products = (state.products || []).slice().sort((a,b) => a.name.localeCompare(b.name)).map(p => ({
     Product: p.name, Categories: (p.categoryIds || []).map(id => state.categories.find(c => c.id === id)?.name).filter(Boolean).join(', '),
     Stock: totalStock(p), AvailableStock: availableStock(p), CTSize: p.ctSize || '', CustomsCode: p.customsCode || '',
-    UnitWeightKg: p.unitWeightKg || '', Image: p.imageFileName || '', Wordings: (p.wordings || []).join(' | '), Codes: (p.codes || []).join(' | '), Notes: p.notes || ''
+    UnitWeightKg: p.unitWeightKg || '', Position: p.position || '', Image: p.imageFileName || '', Wordings: (p.wordings || []).join(' | '), Codes: (p.codes || []).join(' | '), Notes: p.notes || ''
   }));
   const lots = [];
   for (const p of (state.products || [])) for (const l of normalizeLots(p.lots || [])) lots.push({ Product: p.name, Expiry: l.expiry === '__unknown__' ? 'Unknown' : l.expiry, Qty: l.qty, Ordered: l.ordered ? 'Yes' : 'No', Status: l.ordered ? 'Ordered' : lotStatus(l.expiry) });
